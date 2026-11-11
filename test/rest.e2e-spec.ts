@@ -144,7 +144,7 @@ describe('REST API (real Postgres + PostGIS and Redis)', () => {
         const bad = await api().patch('/me').set(alice.auth).send({ avatar }).expect(400);
         expect(bad.body.error.code).toBe('invalid_avatar');
       }
-      const notAnObject = await api().patch('/me').set(alice.auth).send({ avatar: 'fox' }).expect(400);
+      const notAnObject = await api().patch('/me').set(alice.auth).send({ avatar: 'not-an-object' }).expect(400);
       expect(notAnObject.body.error.code).toBe('validation_failed');
       // the old preset field is gone
       await api().patch('/me').set(alice.auth).send({ avatarPreset: 'owl' }).expect(400);
