@@ -81,6 +81,10 @@ export function loadConfig(env: Env = process.env): AppConfig {
   if (jwtSecret && jwtSecret.length < 32) {
     problems.push('JWT_SECRET must be at least 32 characters');
   }
+  // the repository is public, so the example value is known to everyone
+  if (isProd && jwtSecret?.includes('change-me')) {
+    problems.push('JWT_SECRET is still the example value from .env.example');
+  }
 
   const devAuthEnabled = bool(env.DEV_AUTH_ENABLED, false);
   if (devAuthEnabled && isProd) {

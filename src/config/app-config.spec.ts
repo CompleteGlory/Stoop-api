@@ -40,6 +40,12 @@ describe('loadConfig', () => {
     expect(() => loadConfig({ ...valid, JWT_SECRET: 'short' })).toThrow(/at least 32 characters/);
   });
 
+  it('refuses the example JWT secret in production', () => {
+    const example = { ...valid, JWT_SECRET: 'change-me-to-a-long-random-string-of-32+chars' };
+    expect(() => loadConfig({ ...example, NODE_ENV: 'production' })).toThrow(/example value/);
+    expect(() => loadConfig(example)).not.toThrow();
+  });
+
   it('refuses the dev sign-in in production', () => {
     expect(() => loadConfig({ ...valid, NODE_ENV: 'production', DEV_AUTH_ENABLED: 'true' })).toThrow(
       /DEV_AUTH_ENABLED must not be set in production/,
