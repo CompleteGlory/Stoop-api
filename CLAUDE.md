@@ -2,12 +2,12 @@
 
 # Place Rating
 
-A one-screen iOS MapKit app: friends see each other move on a map (Snapchat-map style, friends only) and everyone rates places by tapping them. **This repository is the backend** (NestJS REST API + live-location WebSocket). The SwiftUI app is the next thing to build and has not been started.
+A one-screen iOS MapKit app: friends see each other move on a map (Snapchat-map style, friends only) and everyone rates places by tapping them. **This repository is the backend** (NestJS REST API + live-location WebSocket). The SwiftUI app, Stoop, lives in the sibling repo `place-rating-ios`.
 
 ## Status
 
 - Backend: spec milestones 1–5 are done, tested and **deployed** at `https://place-rating-api-production.up.railway.app` (Railway project `wholesome-perfection`: services `place-rating-api`, `PostGIS`, `Redis`, bucket `shelved-wrap`). Every push to `main` redeploys.
-- iOS app: milestones 6–9 to do. Start with `docs/ios-app-brief.md`.
+- iOS app (Stoop, repo `place-rating-ios`): sign-in, username, DiceBear character and the map shell with mock friends are built (milestone 6, simulator-checked; a real-device run is still owed). Milestones 7–9 to do. Start with `docs/ios-app-brief.md`.
 - Production has **no dev sign-in**. `APPLE_BUNDLE_ID` on Railway is the app's real bundle id, `com.magdzaky.PlaceRating`. For development run the backend locally (below).
 
 ## Docs: read before working on the matching area

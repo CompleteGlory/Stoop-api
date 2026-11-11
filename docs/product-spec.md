@@ -77,7 +77,7 @@ Backend first, then the client against a mocked socket, then the two joined.
 | 3 | Friends and moderation: search, requests, accept, remove, blocks, reports, deletion | Blocked user cannot be found nor see the other's rating details/friend status | **Done** |
 | 4 | Avatars and photos: DiceBear character validation; place and menu photos with presigned upload, file checks, EXIF stripping, thumbnails | JPEG with GPS comes back with none; a non-image is rejected; an unknown character option is rejected | **Done** (reworked 2026-11-11 from preset and photo avatars) |
 | 5 | Live gateway: WS auth, hello, loc fan-out, 60 s TTL, ghost, gone | Friend receives `loc`; `gone` on ghost and on disconnect | **Done** |
-| 6 | iOS map shell: map, location permission, own avatar, bottom sheet, mock friends | Runs on a real device with fake friends moving | To do |
+| 6 | iOS map shell: map, location permission, own avatar, bottom sheet, mock friends | Runs on a real device with fake friends moving | **Done on the simulator** (2026-11-11, with sign-in, username and DiceBear character steps); real-device check still to do |
 | 7 | iOS + API joined: sign-in, places in view, rating sheet, character screen and profile, people search and friend requests | A rating made on the phone appears on a second device; a request by username can be accepted there | To do |
 | 8 | iOS live friends: LiveSocket, avatar markers, ghost toggle, dim and remove on stale | Two phones see each other move; sharing stops when backgrounded | To do |
 | 9 | Polish: report/block UI, empty and error states, README with demo recording, TestFlight build | A friend installs from TestFlight and completes the two-phone check unaided | To do |
