@@ -1,0 +1,40 @@
+# Local development services: Postgres + PostGIS, Redis and a fake S3 for avatar photos.
+#   docker compose up -d
+# The API reads the matching settings from .env (copy .env.example).
+#
+# The S3 stand-in is moto (https://github.com/getmoto/moto): small, no login, and the one the
+# tests were run against. It keeps everything in memory, so uploaded avatars are gone after a
+# restart. (MinIO used to be the usual choice, but its Docker images were withdrawn in 2026.)
+services:
+  postgres:
+    image: postgis/postgis:16-3.4
+    # this image has no native arm64 build; on Apple Silicon Docker runs it through emulation
+    platform: linux/amd64
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: placerating
+    ports:
+      # host port 5433 so it does not clash with a Postgres you already run on 5432
+      - '5433:5432'
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d placerating']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - '6379:6379'
+
+  s3:
+    image: motoserver/moto:latest
+    ports:
+      # host port 9000: macOS uses 5000 for AirPlay Receiver
+      - '9000:5000'
+
+volumes:
+  pgdata:

@@ -1,0 +1,7 @@
+/dist
+/node_modules
+/coverage
+*.tsbuildinfo
+.env
+.DS_Store
+scripts/smoke-report.txt

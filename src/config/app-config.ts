@@ -1,0 +1,137 @@
+export const APP_CONFIG = Symbol('APP_CONFIG');
+
+export interface AppConfig {
+  nodeEnv: 'development' | 'test' | 'production';
+  port: number;
+  databaseUrl: string;
+  databaseSsl: boolean;
+  redisUrl: string;
+  jwt: {
+    secret: string;
+    issuer: string;
+    accessTtlSec: number;
+    refreshTtlSec: number;
+  };
+  apple: {
+    /** The iOS app's bundle id. Apple puts it in the `aud` claim of identity tokens. */
+    bundleId: string;
+  };
+  /** Enables `POST /auth/dev`, a sign-in that skips Apple. Never allowed in production. */
+  devAuthEnabled: boolean;
+  live: {
+    /** Updates from one person closer together than this are dropped (spec: 1 per 2 s). */
+    minLocIntervalMs: number;
+    /** How often the server pings sockets; a socket that missed the previous ping is closed. */
+    pingIntervalMs: number;
+    /** How long a location lives in Redis without a new update. */
+    locTtlSec: number;
+  };
+  s3: {
+    /** Leave empty for AWS; set for R2, Railway buckets, a local S3 mock and similar. */
+    endpoint: string | undefined;
+    region: string;
+    bucket: string;
+    accessKeyId: string;
+    secretAccessKey: string;
+    forcePathStyle: boolean;
+    /** The public address of this API, without a trailing slash: avatar URLs are `<this>/avatars/<user>/<file>.jpg`. */
+    publicBaseUrl: string;
+    /** Create the bucket on startup when it is missing (development only). */
+    autoCreateBucket: boolean;
+  };
+}
+
+type Env = Record<string, string | undefined>;
+
+function bool(value: string | undefined, fallback: boolean): boolean {
+  if (value === undefined || value === '') return fallback;
+  return ['1', 'true', 'yes', 'on'].includes(value.toLowerCase());
+}
+
+function int(value: string | undefined, fallback: number): number {
+  if (value === undefined || value === '') return fallback;
+  const n = Number(value);
+  return Number.isInteger(n) ? n : Number.NaN;
+}
+
+/**
+ * Reads and validates the environment once. Every problem is collected so a
+ * misconfigured deploy reports all of them at once instead of one per restart.
+ */
+export function loadConfig(env: Env = process.env): AppConfig {
+  const problems: string[] = [];
+  const need = (name: string): string => {
+    const value = env[name];
+    if (!value) problems.push(`${name} is required`);
+    return value ?? '';
+  };
+
+  const rawEnv = env.NODE_ENV ?? 'development';
+  const nodeEnv = (
+    ['development', 'test', 'production'].includes(rawEnv) ? rawEnv : 'development'
+  ) as AppConfig['nodeEnv'];
+  const isProd = nodeEnv === 'production';
+
+  const port = int(env.PORT, 3000);
+  if (!Number.isInteger(port) || port < 0 || port > 65535) {
+    problems.push('PORT must be an integer between 0 and 65535');
+  }
+
+  const jwtSecret = need('JWT_SECRET');
+  if (jwtSecret && jwtSecret.length < 32) {
+    problems.push('JWT_SECRET must be at least 32 characters');
+  }
+
+  const devAuthEnabled = bool(env.DEV_AUTH_ENABLED, false);
+  if (devAuthEnabled && isProd) {
+    problems.push('DEV_AUTH_ENABLED must not be set in production');
+  }
+
+  const accessTtlSec = int(env.ACCESS_TOKEN_TTL_SEC, 15 * 60);
+  const refreshTtlSec = int(env.REFRESH_TOKEN_TTL_SEC, 30 * 24 * 60 * 60);
+  if (!(accessTtlSec > 0) || !(refreshTtlSec > 0)) {
+    problems.push('ACCESS_TOKEN_TTL_SEC and REFRESH_TOKEN_TTL_SEC must be positive integers');
+  }
+
+  const config: AppConfig = {
+    nodeEnv,
+    port,
+    databaseUrl: need('DATABASE_URL'),
+    databaseSsl: bool(env.DATABASE_SSL, false),
+    redisUrl: need('REDIS_URL'),
+    jwt: {
+      secret: jwtSecret,
+      issuer: env.JWT_ISSUER || 'place-rating-api',
+      accessTtlSec,
+      refreshTtlSec,
+    },
+    apple: { bundleId: devAuthEnabled ? (env.APPLE_BUNDLE_ID ?? '') : need('APPLE_BUNDLE_ID') },
+    devAuthEnabled,
+    live: {
+      minLocIntervalMs: int(env.LIVE_MIN_LOC_INTERVAL_MS, 2000),
+      pingIntervalMs: int(env.LIVE_PING_INTERVAL_MS, 20000),
+      locTtlSec: int(env.LIVE_LOC_TTL_SEC, 60),
+    },
+    s3: {
+      endpoint: env.S3_ENDPOINT || undefined,
+      region: env.S3_REGION || 'us-east-1',
+      bucket: need('S3_BUCKET'),
+      accessKeyId: need('S3_ACCESS_KEY_ID'),
+      secretAccessKey: need('S3_SECRET_ACCESS_KEY'),
+      forcePathStyle: bool(env.S3_FORCE_PATH_STYLE, false),
+      publicBaseUrl: (env.AVATAR_PUBLIC_BASE_URL ?? '').replace(/\/+$/, ''),
+      autoCreateBucket: bool(env.S3_AUTO_CREATE_BUCKET, false) && !isProd,
+    },
+  };
+
+  const { minLocIntervalMs, pingIntervalMs, locTtlSec } = config.live;
+  if (!(minLocIntervalMs >= 0) || !(pingIntervalMs > 0) || !(locTtlSec > 0)) {
+    problems.push('LIVE_* settings must be integers (LIVE_MIN_LOC_INTERVAL_MS may be 0)');
+  }
+  if (!config.s3.publicBaseUrl) problems.push('AVATAR_PUBLIC_BASE_URL is required');
+
+  if (problems.length > 0) {
+    throw new Error(`Invalid configuration:\n- ${problems.join('\n- ')}`);
+  }
+  return config;
+}
