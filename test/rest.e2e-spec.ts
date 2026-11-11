@@ -1,5 +1,6 @@
 import type { INestApplication } from '@nestjs/common';
 import request from 'supertest';
+import { DataSource } from 'typeorm';
 import { befriend, createTestApp, downtown, resetState, signUp } from './helpers.js';
 
 describe('REST API (real Postgres + PostGIS and Redis)', () => {
@@ -141,9 +142,61 @@ describe('REST API (real Postgres + PostGIS and Redis)', () => {
       expect(first.body.refreshToken).not.toBe(alice.refreshToken);
       await api().get('/me').set({ Authorization: `Bearer ${first.body.accessToken}` }).expect(200);
 
-      // replaying the first token is treated as theft: the new token stops working too
+      // once the grace window has passed, replaying the first token is treated as theft
+      await app.get(DataSource).query(
+        `UPDATE refresh_tokens SET revoked_at = now() - interval '1 minute' WHERE revoked_at IS NOT NULL`,
+      );
       await api().post('/auth/refresh').send({ refreshToken: alice.refreshToken }).expect(401);
       await api().post('/auth/refresh').send({ refreshToken: first.body.refreshToken }).expect(401);
+    });
+
+    it('recovers a refresh whose response was lost, within the grace window', async () => {
+      const alice = await signUp(app, 'alice');
+      const lost = await api().post('/auth/refresh').send({ refreshToken: alice.refreshToken }).expect(200);
+
+      // the client never saw `lost`, so it retries with the token it still has
+      const retry = await api().post('/auth/refresh').send({ refreshToken: alice.refreshToken }).expect(200);
+      expect(retry.body.refreshToken).not.toBe(lost.body.refreshToken);
+      await api().get('/me').set({ Authorization: `Bearer ${retry.body.accessToken}` }).expect(200);
+
+      // only the newest token stays alive, and using it keeps working
+      await api().post('/auth/refresh').send({ refreshToken: retry.body.refreshToken }).expect(200);
+    });
+
+    it('does not let the grace window undo a logout', async () => {
+      const alice = await signUp(app, 'alice');
+      const next = await api().post('/auth/refresh').send({ refreshToken: alice.refreshToken }).expect(200);
+      await api().post('/auth/logout').send({ refreshToken: next.body.refreshToken }).expect(204);
+      await api().post('/auth/refresh').send({ refreshToken: alice.refreshToken }).expect(401);
+    });
+
+    it('reports whether a username is available, before onboarding too', async () => {
+      await signUp(app, 'alice');
+      const signIn = await api()
+        .post('/auth/apple')
+        .send({ identityToken: 'fake-apple-token-for-newcomer' })
+        .expect(200);
+      const auth = { Authorization: `Bearer ${signIn.body.accessToken}` };
+      const check = async (username: string) =>
+        (await api().get('/users/availability').query({ username }).set(auth).expect(200)).body;
+
+      expect(await check('fresh.name')).toEqual({ available: true, reason: null });
+      expect(await check('ALICE')).toEqual({ available: false, reason: 'taken' });
+      expect(await check('admin')).toEqual({ available: false, reason: 'reserved' });
+      expect(await check('a b!')).toEqual({ available: false, reason: 'invalid' });
+    });
+
+    it('treats your own username as available', async () => {
+      const alice = await signUp(app, 'alice');
+      const res = await api().get('/users/availability').query({ username: 'alice' }).set(alice.auth).expect(200);
+      expect(res.body).toEqual({ available: true, reason: null });
+    });
+
+    it('requires a token and a username parameter to check availability', async () => {
+      await api().get('/users/availability').query({ username: 'alice' }).expect(401);
+      const alice = await signUp(app, 'alice');
+      const res = await api().get('/users/availability').set(alice.auth).expect(400);
+      expect(res.body.error.code).toBe('validation_failed');
     });
 
     it('logs out by revoking the refresh token', async () => {

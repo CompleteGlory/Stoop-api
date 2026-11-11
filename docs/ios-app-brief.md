@@ -6,12 +6,12 @@ How to build the client for this backend. The product is in `product-spec.md`, t
 
 1. **Where the Xcode project lives.** Recommended: its own repo next to this one (`../place-rating-ios`), so the app repo gets its own README and demo recording (milestone 9). Putting it in `ios/` of this repo also works (Railway only builds the Node app).
 2. **Open decisions 5–7** in `product-spec.md` are assumed defaults (Apple points of interest only, iOS 18+, Sign in with Apple only). Confirm them.
-3. **Bundle identifier.** The backend verifies Apple identity tokens against `APPLE_BUNDLE_ID` (currently the placeholder `com.example.PlaceRating`, in `.env.example` and on Railway). The app's bundle id must equal it, so either use the placeholder or change the variable.
+3. **Bundle identifier.** The backend verifies Apple identity tokens against `APPLE_BUNDLE_ID`. The app's bundle id is `com.magdzaky.PlaceRating`, and Railway is set to the same value; the two must stay equal.
 4. The owner is an experienced Flutter/NestJS developer new to native iOS. Explain SwiftUI/MapKit specifics briefly where they differ from Flutter, and keep the codebase portfolio-clean: small views, protocols at the seams, tests, a good README.
 
 ## Stack and rules
 
-SwiftUI, **iOS 18+**, MapKit for SwiftUI (`Map`), Observation (`@Observable`), async/await, Swift Testing. **No third-party packages.** One screen, one view model, every outside dependency behind a protocol.
+SwiftUI, **iOS 18+**, MapKit for SwiftUI (`Map`), Observation (`@Observable`), async/await, Swift Testing. Use external Swift packages where they make the work easier; write it by hand only when that is the right call. One screen, one view model, every outside dependency behind a protocol.
 
 - Tokens go in the **Keychain**, never `UserDefaults`.
 - Never log coordinates or tokens.
@@ -73,7 +73,7 @@ extension JSONDecoder {
 **Auth session** (an `actor`, so refreshes are serialised):
 
 1. Sign in with Apple: generate a random raw nonce, set `request.nonce` to its **SHA-256 hex**, then `POST /auth/apple { identityToken, nonce: <raw nonce>, fullName }`. The name is only available on the very first authorisation, so send it when present.
-2. If `needsOnboarding` is true, show the username picker as a mandatory step before the map (`PATCH /me`, handle `409 username_taken`, `422 username_reserved`, validation). The server enforces this: until a username is set, every route except `/me` returns `403 username_required` and `/live` refuses the upgrade with HTTP 403. Check `needsOnboarding` after refresh too, so an app killed mid-onboarding returns to the picker.
+2. If `needsOnboarding` is true, show the username picker as a mandatory step before the map (debounced `GET /users/availability` while typing, then `PATCH /me`, handle `409 username_taken`, `422 username_reserved`, validation). The server enforces this: until a username is set, every route except `/me` and `/users/availability` returns `403 username_required` and `/live` refuses the upgrade with HTTP 403. Check `needsOnboarding` after refresh too, so an app killed mid-onboarding returns to the picker.
 3. Any `401` → one refresh → retry the request once. Refresh tokens **rotate**: store the new one in the Keychain before using the new access token, and never refresh in parallel (a reused refresh token revokes the whole session and forces a new sign-in). Failed refresh → signed out.
 4. Sign out: `POST /auth/logout` with the refresh token, clear the Keychain.
 

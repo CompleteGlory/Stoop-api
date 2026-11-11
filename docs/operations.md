@@ -18,7 +18,7 @@ NODE_ENV=production
 DATABASE_URL=${{PostGIS.DATABASE_URL}}
 REDIS_URL=${{Redis.REDIS_URL}}
 JWT_SECRET=${{ secret(64) }}
-APPLE_BUNDLE_ID=com.example.PlaceRating        # PLACEHOLDER, set the real bundle id
+APPLE_BUNDLE_ID=com.magdzaky.PlaceRating
 S3_ENDPOINT=https://t3.storageapi.dev
 S3_REGION=${{shelved-wrap.REGION}}
 S3_BUCKET=${{shelved-wrap.BUCKET}}
@@ -32,7 +32,7 @@ Never set `DEV_AUTH_ENABLED` (the server refuses to boot with it in production) 
 
 Checks after a deploy: `GET /health` → `{"status":"ok","db":"up","redis":"up"}`; `GET /me` without a token → 401 error envelope; an unknown avatar URL → 404 (proves the bucket credentials work). The smoke script cannot run against production, because it signs in through `/auth/dev`.
 
-**Before the iOS app can sign in:** set `APPLE_BUNDLE_ID` to the app's real bundle id. Until then `POST /auth/apple` returns 401 for every real token.
+`APPLE_BUNDLE_ID` must equal the iOS app's bundle id, or `POST /auth/apple` returns 401 for every real token.
 
 ## Local development
 

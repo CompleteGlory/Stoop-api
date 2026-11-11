@@ -18,7 +18,7 @@ import { TokensService } from '../auth/tokens.service.js';
 import { recomputePlaceAggregates } from '../ratings/aggregates.js';
 import { AvatarService } from './avatar.service.js';
 import { DEFAULT_AVATAR_PRESET } from './avatar-presets.js';
-import type { UpdateMeDto } from './users.dto.js';
+import { USERNAME_PATTERN, type UpdateMeDto } from './users.dto.js';
 
 const RESERVED_USERNAMES = new Set([
   'admin', 'administrator', 'support', 'help', 'root', 'moderator', 'official', 'staff', 'null', 'undefined',
@@ -33,6 +33,11 @@ export type FriendStatus = 'none' | 'friends' | 'request_sent' | 'request_receiv
 
 export interface UserSearchResultDto extends PublicUserDto {
   friendStatus: FriendStatus;
+}
+
+export interface UsernameAvailabilityResultDto {
+  available: boolean;
+  reason: 'taken' | 'reserved' | 'invalid' | null;
 }
 
 @Injectable()
@@ -134,6 +139,17 @@ export class UsersService {
     await this.tokens.revokeAccessTokens(id);
     await this.avatars.deleteUploaded(user);
     this.events.emit({ type: 'user-deleted', userId: id, friendIds });
+  }
+
+  /** Whether `username` could be saved by the caller right now. Saving can still lose a race. */
+  async checkUsername(callerId: string, username: string): Promise<UsernameAvailabilityResultDto> {
+    await this.limiter.consume(`username-check:${callerId}`, 300, 3600, 'username checks');
+
+    if (!USERNAME_PATTERN.test(username)) return { available: false, reason: 'invalid' };
+    if (RESERVED_USERNAMES.has(username)) return { available: false, reason: 'reserved' };
+    const owner = await this.users.findOne({ where: { username }, select: { id: true } });
+    if (owner && owner.id !== callerId) return { available: false, reason: 'taken' };
+    return { available: true, reason: null };
   }
 
   /** Prefix search on usernames, never returning the caller, blocked users or deleted accounts. */

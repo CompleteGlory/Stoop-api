@@ -18,12 +18,14 @@ const trim = ({ value }: { value: unknown }) => (typeof value === 'string' ? val
 const lower = ({ value }: { value: unknown }) =>
   typeof value === 'string' ? value.trim().toLowerCase() : value;
 
+export const USERNAME_PATTERN = /^[a-z0-9_.]{3,20}$/;
+
 export class UpdateMeDto {
   // not @IsOptional: that also accepts null, which would erase the username
   @ValidateIf((_, value) => value !== undefined)
   @IsString()
   @Transform(lower)
-  @Matches(/^[a-z0-9_.]{3,20}$/, {
+  @Matches(USERNAME_PATTERN, {
     message: 'username must be 3-20 characters: letters, digits, "_" or "."',
   })
   username?: string;
@@ -59,6 +61,14 @@ export class AvatarConfirmDto {
   @IsString()
   @Length(10, 200)
   key: string;
+}
+
+/** Deliberately loose: a badly formed name is an answer (`invalid`), not a request error. */
+export class UsernameAvailabilityDto {
+  @IsString()
+  @Transform(lower)
+  @Length(1, 64)
+  username: string;
 }
 
 export class SearchUsersDto {

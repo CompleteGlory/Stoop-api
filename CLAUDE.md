@@ -8,7 +8,7 @@ A one-screen iOS MapKit app: friends see each other move on a map (Snapchat-map 
 
 - Backend: spec milestones 1–5 are done, tested and **deployed** at `https://place-rating-api-production.up.railway.app` (Railway project `wholesome-perfection`: services `place-rating-api`, `PostGIS`, `Redis`, bucket `shelved-wrap`). Every push to `main` redeploys.
 - iOS app: milestones 6–9 to do. Start with `docs/ios-app-brief.md`.
-- Production has **no dev sign-in**, and `APPLE_BUNDLE_ID` on Railway is a placeholder (`com.example.PlaceRating`), so real Sign in with Apple cannot work until the app's real bundle id is set there. For development run the backend locally (below).
+- Production has **no dev sign-in**. `APPLE_BUNDLE_ID` on Railway is the app's real bundle id, `com.magdzaky.PlaceRating`. For development run the backend locally (below).
 
 ## Docs: read before working on the matching area
 
@@ -63,7 +63,7 @@ docs/                          the docs above
 7. The bucket stays private. Photos are re-encoded to a 256 px JPEG (EXIF stripped) before they are served.
 8. One live connection per user, and one API instance (live fan-out is in memory).
 9. Account deletion anonymises the user row and removes ratings, friendships, blocks, sessions and the photo, then recomputes averages.
-10. A username is mandatory: without one, only `/me` works (`403 username_required`) and `/live` refuses the upgrade. A username can change but never be cleared.
+10. A username is mandatory: without one, only `/me` and `/users/availability` work (`403 username_required`) and `/live` refuses the upgrade. A username can change but never be cleared.
 
 ## Backend conventions
 

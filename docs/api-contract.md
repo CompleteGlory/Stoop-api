@@ -28,7 +28,7 @@ Switch on `code`, show `message` only for debugging.
 | 400 | `invalid_target` | Friending/blocking/reporting yourself, or reporting your own rating |
 | 400 | `invalid_key` | Avatar upload key does not belong to you |
 | 401 | `unauthorized` | Missing, invalid or expired access token; bad Apple token; bad/used refresh token; account deleted |
-| 403 | `username_required` | The account has not picked a username yet. Every signed-in route except `/me` and `/me/avatar/*` returns this until `PATCH /me {username}` succeeds |
+| 403 | `username_required` | The account has not picked a username yet. Every signed-in route except `/me`, `/me/avatar/*` and `/users/availability` returns this until `PATCH /me {username}` succeeds |
 | 404 | `not_found` | Unknown route or resource. Blocked and deleted users also look "not found" |
 | 409 | `username_taken`, `already_friends` | |
 | 422 | `username_reserved`, `invalid_image`, `image_too_large` | |
@@ -62,7 +62,7 @@ Preset ids (ship matching artwork in the app): `fox panda koala owl frog tiger w
 | Request | Response |
 | --- | --- |
 | `POST /auth/apple` `{identityToken, nonce?, fullName?}` | `200 AuthResponse`. Creates the account on first sign-in. `identityToken` 20–8192 chars; `nonce` is the **raw** nonce (the app sent its SHA-256 hex to Apple); `fullName` ≤ 60 chars, only available to the app on the very first Apple sign-in, so send it then. `needsOnboarding` is `true` until a username is set. Errors: `401 unauthorized` (token invalid, wrong audience = bundle id, nonce mismatch) |
-| `POST /auth/refresh` `{refreshToken}` | `200 AuthResponse` with a **new** refresh token. The old one is dead after this call. Presenting an already-used refresh token revokes the whole session family (theft protection) and returns `401`. Persist the new token before doing anything else, and never run two refreshes in parallel |
+| `POST /auth/refresh` `{refreshToken}` | `200 AuthResponse` with a **new** refresh token. The old one is dead after this call. Presenting an already-used refresh token revokes the whole session family (theft protection) and returns `401`, except within 30 seconds of its use: then the call succeeds and replaces the session's live token, so a client that lost the response can retry. Persist the new token before doing anything else, and never run two refreshes in parallel |
 | `POST /auth/logout` `{refreshToken}` | `204`. Revokes that session (also `204` when the token is unknown). The current access token stays valid until it expires |
 | `POST /auth/dev` `{username}` | `200 AuthResponse`. **Local development only**: `404` unless `DEV_AUTH_ENABLED=true`; the server refuses to boot with it on in production |
 
@@ -84,6 +84,8 @@ Upload recipe: (1) `POST upload-url` with the exact byte count of the file; (2) 
 ## Users
 
 `GET /users/search?q=` → `200 { items: [PublicUser + { friendStatus }] }`. `q` is 3–20 chars, lowercased, prefix match on username. Max 20 results, ordered by username, never yourself, blocked people (either direction) or deleted accounts. `friendStatus` is `none | friends | request_sent | request_received`. 60 per hour.
+
+`GET /users/availability?username=` → `200 { available: boolean, reason: "taken" | "reserved" | "invalid" | null }`. For the username picker, so it works before the account has a username. `username` is 1–64 chars, trimmed and lowercased; a badly formed name answers `invalid` rather than an error. Your own current username counts as available. `PATCH /me` can still return `409 username_taken` if someone saves it first. 300 per hour.
 
 ## Places and ratings
 
@@ -129,6 +131,7 @@ Counted per signed-in user in Redis (fixed windows), except sign-in which is per
 | Rating writes (PUT + DELETE) | 30 / hour |
 | Friend requests | 20 / day |
 | Username searches | 60 / hour |
+| Username availability checks | 300 / hour |
 | Avatar upload URLs | 10 / hour |
 | Reports | 20 / day |
 | `POST /places/resolve` | 120 / hour |

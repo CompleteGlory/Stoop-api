@@ -202,7 +202,7 @@ sequenceDiagram
     opt needsOnboarding
         App->>API: PATCH /me with username and displayName
     end
-    Note over App,API: Later, on a 401 the app calls POST /auth/refresh and gets a new access and refresh token. Reusing an old refresh token revokes the whole session.
+    Note over App,API: Later, on a 401 the app calls POST /auth/refresh and gets a new access and refresh token. Reusing an old refresh token more than 30 s later revokes the whole session.
 ```
 
 ### 2. Browse the map and rate a place
@@ -358,7 +358,7 @@ All routes except `/auth/*` and `/health` need `Authorization: Bearer <accessTok
 | Method & path | What it does |
 | --- | --- |
 | `POST /auth/apple` `{identityToken, nonce?, fullName?}` | Verifies the Apple identity token, creates the account on first sign-in. Returns `{accessToken, refreshToken, expiresIn, needsOnboarding, user}` |
-| `POST /auth/refresh` `{refreshToken}` | Rotates the refresh token. Reusing an old one revokes the whole session family |
+| `POST /auth/refresh` `{refreshToken}` | Rotates the refresh token. Reusing an old one more than 30 s later revokes the whole session family |
 | `POST /auth/logout` `{refreshToken}` | Revokes that session |
 | `POST /auth/dev` `{username}` | Development-only sign-in (see above) |
 | `GET /me`, `PATCH /me` `{username?, displayName?, ghostMode?, avatarPreset?}` | Profile. `username` is 3-20 chars of `a-z 0-9 _ .`, unique, lowercased |
@@ -366,6 +366,7 @@ All routes except `/auth/*` and `/health` need `Authorization: Bearer <accessTok
 | `POST /me/avatar/upload-url` `{contentType, contentLength}` | Presigned S3 `PUT` URL for a JPEG/PNG up to 5 MB |
 | `POST /me/avatar/confirm` `{key}` | Re-encodes the upload to a 256 px JPEG (strips EXIF), swaps the avatar, deletes the old object |
 | `GET /users/search?q=` | Username prefix search, 3+ chars, max 20, excludes you and blocked people, shows `friendStatus` |
+| `GET /users/availability?username=` | Whether a username can be saved, with the reason if not. Works before onboarding |
 | `GET /places?bbox=minLng,minLat,maxLng,maxLat` | Places in the box (max 200, box at most 5 degrees wide) |
 | `POST /places/resolve` `{appleId?, name, category?, latitude, longitude}` | Finds or creates the place for what the person picked. Existing places are never changed by clients |
 | `GET /places/:id` | Place with average, count and your own rating |

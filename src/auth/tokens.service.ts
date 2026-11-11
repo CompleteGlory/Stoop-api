@@ -9,6 +9,8 @@ import { RefreshToken } from '../db/entities/refresh-token.entity.js';
 import { RedisService } from '../redis/redis.service.js';
 
 const AUDIENCE = 'place-rating-app';
+/** How long a just-rotated refresh token may be retried, for clients that never received the response. */
+const REFRESH_REUSE_GRACE_MS = 30_000;
 
 export const sha256 = (value: string) => createHash('sha256').update(value).digest('hex');
 
@@ -82,7 +84,8 @@ export class TokensService {
 
   /**
    * Exchanges a refresh token for a new one in the same family. A token that
-   * was already used is a sign of theft: the whole family is revoked.
+   * was already used is a sign of theft and revokes the whole family, unless
+   * it was used within the last few seconds.
    */
   async rotateRefreshToken(raw: string): Promise<{ userId: string; refreshToken: string }> {
     const invalid = () => ApiError.unauthorized('The refresh token is invalid or expired');
@@ -90,6 +93,17 @@ export class TokensService {
     if (!row) throw invalid();
 
     if (row.revokedAt) {
+      if (Date.now() - row.revokedAt.getTime() <= REFRESH_REUSE_GRACE_MS) {
+        // Probably a lost response. Replacing the live token keeps theft detectable: if this
+        // caller is a thief, the real client's token is now dead and its next refresh ends the
+        // family. No live token means the session was logged out or revoked, so nothing to recover.
+        const replaced = await this.refreshTokens.update(
+          { familyId: row.familyId, revokedAt: IsNull() },
+          { revokedAt: new Date() },
+        );
+        if (!replaced.affected) throw invalid();
+        return { userId: row.userId, refreshToken: await this.issueRefreshToken(row.userId, row.familyId) };
+      }
       await this.revokeFamily(row.familyId);
       throw invalid();
     }
