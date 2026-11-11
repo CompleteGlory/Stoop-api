@@ -4,6 +4,310 @@ Backend for a one-screen iOS app where people rate places on a map, each person 
 
 **Stack:** NestJS 12 (ESM) · TypeORM 1.x on Postgres 16 + PostGIS · Redis (live locations, rate limits) · `ws` WebSocket · S3-compatible private bucket for avatar photos (served through the API) · Sign in with Apple · Vitest.
 
+**Live:** `https://place-rating-api-production.up.railway.app` (health check at `/health`), hosted on Railway. **Building the iOS app?** Start with [`CLAUDE.md`](CLAUDE.md) and the [`docs/`](docs) folder.
+
+## Architecture
+
+### System overview
+
+The phone talks to the API over HTTPS and one WebSocket. Postgres keeps everything durable, Redis keeps everything short-lived, and the bucket keeps avatar photos. Only the WebSocket path carries live location, and it ends in Redis.
+
+```mermaid
+flowchart LR
+    subgraph phone["iPhone: SwiftUI app, iOS 18+"]
+        direction TB
+        ui["Map and bottom sheets<br/>MapViewModel"]
+        http["APIClient<br/>URLSession, Bearer token"]
+        ws["LiveSocket<br/>URLSessionWebSocketTask"]
+        loc["LocationService<br/>CLLocationUpdate"]
+    end
+
+    apple["Apple<br/>Maps, Sign in with Apple,<br/>identity public keys"]
+
+    subgraph railway["Railway project"]
+        direction TB
+        subgraph api["NestJS API: one process, one instance"]
+            direction TB
+            rest["REST controllers<br/>auth, me, users, places, ratings,<br/>friends, blocks, reports, avatars"]
+            gw["Live gateway<br/>ws /live"]
+            bus(["DomainEvents<br/>in-process bus"])
+        end
+        pg[("Postgres + PostGIS<br/>durable data")]
+        redis[("Redis<br/>live positions, rate limits,<br/>revoked tokens")]
+        bucket[("Private bucket<br/>avatar photos")]
+    end
+
+    loc --> ui
+    ui --> http
+    ui --> ws
+    ui <--> apple
+    http -- "HTTPS JSON" --> rest
+    ws <-- "WSS JSON frames" --> gw
+    http -. "presigned PUT of the photo" .-> bucket
+    rest --> pg
+    rest --> redis
+    rest -- "read, write, presign" --> bucket
+    rest -- "verify identity token" --> apple
+    rest --> bus
+    bus --> gw
+    gw --> redis
+    gw --> pg
+```
+
+### Inside the API
+
+Every request passes the same three global pieces; the feature modules sit behind them and share a small set of building blocks. REST changes that affect a connected socket (a friend accepted, a block, ghost mode, account deletion) reach the live module through the in-process `DomainEvents` bus, so the two sides never import each other.
+
+```mermaid
+flowchart TB
+    subgraph global["Applied to every request"]
+        direction LR
+        guard["AuthGuard<br/>Bearer JWT, @Public opts out"] --> pipe["ValidationPipe<br/>whitelist, unknown fields rejected"] --> filter["ApiErrorFilter<br/>every error is error.code + error.message"]
+    end
+
+    subgraph feature["Feature modules"]
+        direction TB
+        auth["auth<br/>Apple token check, JWT access tokens,<br/>rotating refresh tokens"]
+        users["users<br/>profile, username search, avatars"]
+        places["places + ratings<br/>bbox query, find-or-create,<br/>idempotent rating upsert"]
+        social["social<br/>friends, blocks, SocialGraph"]
+        moderation["moderation<br/>reports"]
+        live["live<br/>WebSocket gateway, LiveService,<br/>wire protocol"]
+        health["health<br/>Postgres + Redis check"]
+    end
+
+    subgraph shared["Shared building blocks"]
+        direction TB
+        common["common<br/>RateLimiter, DomainEvents, ApiError,<br/>pagination, mappers"]
+        config["config<br/>validated environment"]
+        db["db<br/>entities, SQL migration"]
+        redisSvc["redis<br/>RedisService"]
+        storage["StorageService<br/>S3 client"]
+    end
+
+    global --> feature
+    feature --> shared
+    social -- "emits<br/>relations-changed" --> live
+    users -- "emits ghost-changed,<br/>user-deleted" --> live
+```
+
+### Data model
+
+Six durable tables plus the refresh-token table. Live location is never written to Postgres.
+
+```mermaid
+erDiagram
+    USERS ||--o{ RATINGS : writes
+    PLACES ||--o{ RATINGS : receives
+    USERS ||--o{ FRIENDSHIPS : "requests"
+    USERS ||--o{ FRIENDSHIPS : "is asked"
+    USERS ||--o{ BLOCKS : "blocks"
+    USERS ||--o{ BLOCKS : "is blocked"
+    USERS ||--o{ REFRESH_TOKENS : owns
+    USERS |o--o{ REPORTS : files
+
+    USERS {
+        uuid id PK
+        text apple_sub UK "null after account deletion"
+        text username UK "3-20 of a-z 0-9 _ ."
+        text display_name
+        text avatar_kind "preset or upload"
+        text avatar_value "preset id or object key"
+        boolean ghost_mode
+        timestamptz created_at
+        timestamptz deleted_at "soft delete"
+    }
+    PLACES {
+        uuid id PK
+        text apple_id UK "from MKMapItem.identifier"
+        text name
+        text category
+        geography location "Point 4326 with GiST index"
+        float avg_rating "recomputed in the rating transaction"
+        int rating_count
+    }
+    RATINGS {
+        uuid id PK
+        uuid user_id FK
+        uuid place_id FK
+        smallint stars "1 to 5"
+        text comment "280 characters at most"
+        timestamptz updated_at "unique per user and place"
+    }
+    FRIENDSHIPS {
+        uuid id PK
+        uuid requester_id FK
+        uuid addressee_id FK
+        text status "pending or accepted, one row per pair"
+    }
+    BLOCKS {
+        uuid blocker_id PK, FK
+        uuid blocked_id PK, FK
+    }
+    REPORTS {
+        uuid id PK
+        uuid reporter_id FK
+        text target_type "user, rating or avatar"
+        uuid target_id
+        text reason
+        text status "open, actioned or dismissed"
+    }
+    REFRESH_TOKENS {
+        uuid id PK
+        uuid user_id FK
+        uuid family_id "one per sign-in session"
+        text token_hash UK "SHA-256, never the raw token"
+        timestamptz expires_at
+        timestamptz revoked_at
+    }
+```
+
+### Where each piece of data lives
+
+| Data | Where | How long |
+| --- | --- | --- |
+| Accounts, places, ratings, friendships, blocks, reports, refresh-token hashes | Postgres + PostGIS | Until deleted (account deletion anonymises the user and removes their ratings, friendships, blocks, sessions and photo) |
+| A person's latest live position | Redis `loc:{userId}` | 60 s after the last update; deleted on disconnect or ghost mode; never in Postgres, no history |
+| Rate-limit counters | Redis `rl:...` | One minute, hour or day window |
+| "This user was deleted" marker for access tokens | Redis `revoked:user:{userId}` | Access-token lifetime + 60 s |
+| Avatar photos | Private bucket `avatars/{userId}/{uuid}.jpg` (256 px JPEG, no EXIF), served through `GET /avatars/...` | Until replaced or the account is deleted |
+| Raw avatar uploads | Private bucket `uploads/{userId}/{uuid}` | Until confirmed or rejected (abandoned ones are not cleaned up yet) |
+| Preset avatars | Shipped inside the iOS app; the API stores only the preset id | n/a |
+
+## Data flows
+
+### 1. Sign in
+
+Sign in with Apple is the only way in. The API checks Apple's signature itself, then issues its own tokens, so the app never holds an Apple credential after sign-in.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor P as Person
+    participant App as iOS app
+    participant Apple
+    participant API as NestJS API
+    participant PG as Postgres
+
+    P->>App: Tap Sign in with Apple
+    App->>Apple: Authorize, nonce is the SHA-256 of a random value
+    Apple-->>App: Identity token, full name on the first sign-in only
+    App->>API: POST /auth/apple with identityToken, raw nonce, fullName
+    API->>Apple: Fetch Apple's public keys (cached)
+    API->>API: Check signature, issuer, audience = bundle id, nonce
+    API->>PG: Find the user by apple_sub, create it on first sign-in
+    API->>PG: Store the hash of a new refresh token
+    API-->>App: accessToken (15 min), refreshToken (30 days), needsOnboarding, user
+    App->>App: Save the tokens in the Keychain
+    opt needsOnboarding
+        App->>API: PATCH /me with username and displayName
+    end
+    Note over App,API: Later, on a 401 the app calls POST /auth/refresh and gets a new access and refresh token. Reusing an old refresh token revokes the whole session.
+```
+
+### 2. Browse the map and rate a place
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant App as iOS app
+    participant Maps as Apple Maps
+    participant API as NestJS API
+    participant PG as Postgres + PostGIS
+
+    App->>API: GET /places?bbox=... after the camera has stopped for 400 ms
+    API->>PG: Places inside the box (GiST index), at most 200
+    API-->>App: items with avgRating and ratingCount
+    Note over App: Pins are drawn only where ratingCount is above 0
+    App->>Maps: Person taps a point of interest
+    Maps-->>App: MKMapItem with identifier, name, coordinate
+    App->>API: POST /places/resolve with appleId, name, latitude, longitude
+    API->>PG: Find or create the place (existing places are never changed)
+    API-->>App: Place
+    App->>API: PUT /places/{id}/rating with stars and comment
+    Note over API,PG: One transaction: lock the place row, upsert the rating (unique per user and place), recompute avg_rating and rating_count
+    API-->>App: rating and place, with the new average
+```
+
+Sending the same `PUT` twice leaves the same state, so a retry after a dropped connection is always safe.
+
+### 3. Avatar photo
+
+The photo goes from the phone straight to the bucket; the API only signs the upload and then checks and rewrites the file. The bucket is private, so the API also serves the finished picture.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant App as iOS app
+    participant API as NestJS API
+    participant B as Private bucket
+
+    App->>API: POST /me/avatar/upload-url with contentType and contentLength
+    API->>B: Presign a PUT (type and size are signed, valid 5 minutes)
+    API-->>App: key, uploadUrl, headers
+    App->>B: PUT the photo bytes straight to uploadUrl
+    App->>API: POST /me/avatar/confirm with key
+    API->>B: Read the upload
+    API->>API: Check it is a real JPEG or PNG, rotate, crop to 256 x 256, re-encode as JPEG (EXIF and GPS gone)
+    API->>B: Write avatars/{userId}/{uuid}.jpg
+    API->>B: Delete the raw upload and the previous photo
+    API-->>App: user whose avatar.url is the API address plus /avatars/{userId}/{uuid}.jpg
+    App->>API: GET /avatars/{userId}/{uuid}.jpg (no token needed)
+    API->>B: Read the processed photo
+    API-->>App: image/jpeg, cacheable forever
+```
+
+### 4. Live location
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant A as Alice's phone
+    participant G as Live gateway
+    participant R as Redis
+    participant B as Bob's phone
+
+    Note over A,B: Alice and Bob are accepted, non-blocked friends and Bob is already connected
+    A->>G: WebSocket upgrade with Authorization Bearer token
+    G->>G: Verify the token during the HTTP handshake (401 if bad)
+    G->>R: Read the last position of each friend
+    G-->>A: hello with ghost flag, friends who are sharing now, serverTime
+    loop while the app is open
+        A->>G: loc with lat, lng, accuracy, heading, ts
+        G->>G: Validate (accuracy at most 100 m), drop if under 2 s since the last one
+        G->>R: SET loc:{alice} with a 60 s expiry
+        G-->>B: loc with userId, lat, lng, accuracy, heading, ts
+    end
+    A->>G: ghost with on = true
+    G->>R: DEL loc:{alice}
+    G-->>B: gone with userId = alice
+    G-->>A: ghost with on = true
+    Note over A,B: A disconnect does the same: delete the key, send gone. If updates just stop, the key expires after 60 s, and Bob's app dims Alice's marker at 30 s and removes it at 60 s.
+```
+
+The phone sends at most one `loc` every 3 s, skips moves under 10 m, and still sends a heartbeat every 15 s so the 60 s expiry never lapses while the person stands still. Sharing stops when the app leaves the foreground. Full rules: [`docs/live-protocol.md`](docs/live-protocol.md).
+
+### 5. Friend, block, ghost and deletion changes reaching a live socket
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Bob as Bob's phone
+    participant REST as REST controllers
+    participant PG as Postgres
+    participant Bus as DomainEvents
+    participant Live as LiveService
+    participant Alice as Alice's phone, connected
+
+    Bob->>REST: POST /friends/requests/{id}/accept (or block, unfriend, ghost via PATCH /me, DELETE /me)
+    REST->>PG: Update the friendship, block or user
+    REST->>Bus: emit relations-changed for Alice and Bob (or ghost-changed, user-deleted)
+    Bus->>Live: event
+    Live->>PG: Re-read who each connected person may see
+    Live-->>Alice: loc with Bob's current position if they are now friends, gone for Bob if not any more
+    Note over Live: As a safety net, every 60 s the friend list of every connection is re-read.
+```
+
 ## Run it locally
 
 ```bash
@@ -142,6 +446,9 @@ src/
   live/         WebSocket gateway, Redis presence, wire protocol
   common/       error envelope, rate limiter, pagination, shared mappers
 test/           end-to-end specs (REST, avatars, live socket)
+scripts/        smoke.mjs, a black-box check of a running server
+docs/           API contract, live protocol, data model, product spec, iOS app brief, operations
+CLAUDE.md       context for Claude Code sessions (start here when building the iOS app)
 ```
 
 Places and ratings use SQL instead of entities because of the `geography` column and the aggregate recompute; everything else uses TypeORM repositories.
