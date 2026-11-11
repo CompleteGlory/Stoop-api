@@ -3,7 +3,7 @@ import { ApiError } from '../common/api-error.js';
 
 /**
  * The DiceBear styles that draw a person someone can customise. The app renders avatars itself
- * from `{ style, options }` with the same DiceBear version (9.4.2), so the server only checks that
+ * from `{ style, options }` with the same DiceBear version (9.4.3), so the server only checks that
  * every option exists in that style's own schema.
  */
 export const CHARACTER_STYLES = [

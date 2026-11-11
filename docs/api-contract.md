@@ -45,7 +45,7 @@ Other generic codes can appear from the framework: `bad_request`, `forbidden`, `
 
 ```text
 Avatar          { style: string, options: { [option]: string } }
-                  a DiceBear 9.4.2 character; the app draws it, the server only checks it
+                  a DiceBear 9.4.3 character; the app draws it, the server only checks it
 PublicUser      { id, username: string | null, displayName, avatar: Avatar | null }
                   avatar is null until the person picks a character
 PlacePhoto      { id, kind: "place" | "menu", url, thumbnailUrl, width, height, createdAt, user: PublicUser }
@@ -61,7 +61,7 @@ FriendshipEntry { id, user: PublicUser, since }      id is the friendship id
 AuthResponse    { accessToken, refreshToken, expiresIn: seconds (900), needsOnboarding: boolean, user: SelfUser }
 ```
 
-Character styles (DiceBear 9.4.2, the same version in the app and the server): `adventurer avataaars bigEars bigSmile croodles dylan lorelei micah miniavs notionists openPeeps personas pixelArt toonHead`. `options` maps an option of that style to one of its values, to a 6-digit lowercase hex colour for colour options, or to `none` for parts the style can leave out (it has a matching `…Probability` option). Picture settings (`seed`, `backgroundColor`, `scale`, `flip` and similar) and `…Probability` options are refused. New accounts have no avatar.
+Character styles (DiceBear 9.4.3, the same version in the app and the server): `adventurer avataaars bigEars bigSmile croodles dylan lorelei micah miniavs notionists openPeeps personas pixelArt toonHead`. `options` maps an option of that style to one of its values, to a 6-digit lowercase hex colour for colour options, or to `none` for parts the style can leave out (it has a matching `…Probability` option). Picture settings (`seed`, `backgroundColor`, `scale`, `flip` and similar) and `…Probability` options are refused. New accounts have no avatar.
 
 ## Auth
 

@@ -60,7 +60,7 @@ docs/                          the docs above
 4. A rating write locks the place row, upserts the rating and recomputes the place average in one transaction. `PUT /places/:id/rating` stays idempotent.
 5. Clients can create places but never change or delete them.
 6. `DEV_AUTH_ENABLED` must never be on in production (the config refuses to boot). No secrets in git; `.env` is ignored.
-7. The bucket stays private. Place photos are re-encoded (at most 1600 px, plus a 400 px thumbnail, EXIF stripped) before they are served. Avatars are DiceBear characters: the app draws them, the server only stores and validates `{style, options}` against the pinned DiceBear version (9.4.2, same as the app).
+7. The bucket stays private. Place photos are re-encoded (at most 1600 px, plus a 400 px thumbnail, EXIF stripped) before they are served. Avatars are DiceBear characters: the app draws them, the server only stores and validates `{style, options}` against the pinned DiceBear version (9.4.3, same as the app).
 8. One live connection per user, and one API instance (live fan-out is in memory).
 9. Account deletion anonymises the user row and removes ratings, friendships, blocks, sessions and their place photos (rows and files), then recomputes averages.
 10. A username is mandatory: without one, only `/me` and `/users/availability` work (`403 username_required`) and `/live` refuses the upgrade. A username can change but never be cleared.
