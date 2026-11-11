@@ -108,7 +108,7 @@ export class UsersService {
    * about or by them stay so moderation history is not lost.
    */
   async deleteSelf(id: string): Promise<void> {
-    await this.mustFind(id);
+    const user = await this.mustFind(id);
     const friendIds = await this.graph.friendIds(id);
 
     const photoKeys = await this.db.transaction(async (m) => {
@@ -121,6 +121,7 @@ export class UsersService {
       await m.query(`DELETE FROM friendships WHERE requester_id = $1 OR addressee_id = $1`, [id]);
       await m.query(`DELETE FROM blocks WHERE blocker_id = $1 OR blocked_id = $1`, [id]);
       await m.query(`DELETE FROM refresh_tokens WHERE user_id = $1`, [id]);
+      if (user.email) await m.query(`DELETE FROM email_codes WHERE email = $1`, [user.email]);
       // TypeORM answers a DELETE ... RETURNING with [rows, affected count]
       const [photos]: [{ object_key: string; thumb_key: string }[], number] = await m.query(
         `DELETE FROM place_photos WHERE user_id = $1 RETURNING object_key, thumb_key`,
@@ -129,7 +130,8 @@ export class UsersService {
       await m.query(
         `UPDATE users
             SET deleted_at = now(), apple_sub = NULL, username = NULL, display_name = 'Deleted user',
-                avatar_style = NULL, avatar_options = NULL, ghost_mode = true
+                avatar_style = NULL, avatar_options = NULL, ghost_mode = true,
+                email = NULL, email_verified_at = NULL, password_hash = NULL, google_sub = NULL
           WHERE id = $1`,
         [id],
       );

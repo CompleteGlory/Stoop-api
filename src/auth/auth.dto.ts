@@ -1,5 +1,5 @@
 import { Transform } from 'class-transformer';
-import { IsOptional, IsString, Length, Matches, MaxLength, MinLength } from 'class-validator';
+import { IsEmail, IsOptional, IsString, Length, Matches, MaxLength, MinLength } from 'class-validator';
 
 export class AppleSignInDto {
   @IsString()
@@ -32,4 +32,38 @@ export class DevLoginDto {
   @Transform(({ value }) => (typeof value === 'string' ? value.toLowerCase() : value))
   @Matches(/^[a-z0-9_.]{3,20}$/)
   username: string;
+}
+
+const email = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim().toLowerCase() : value);
+
+export class GoogleSignInDto {
+  @IsString()
+  @MinLength(20)
+  @MaxLength(8192)
+  idToken: string;
+}
+
+export class EmailDto {
+  @Transform(email)
+  @IsEmail({}, { message: 'email must be an email address' })
+  @MaxLength(254)
+  email: string;
+}
+
+export class EmailPasswordDto extends EmailDto {
+  @IsString()
+  @Length(8, 128, { message: 'password must be 8 to 128 characters' })
+  password: string;
+}
+
+export class EmailCodeDto extends EmailDto {
+  @IsString()
+  @Matches(/^\d{6}$/, { message: 'code must be 6 digits' })
+  code: string;
+}
+
+export class PasswordResetDto extends EmailCodeDto {
+  @IsString()
+  @Length(8, 128, { message: 'newPassword must be 8 to 128 characters' })
+  newPassword: string;
 }

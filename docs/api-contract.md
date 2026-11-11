@@ -25,10 +25,13 @@ Switch on `code`, show `message` only for debugging.
 | 400 | `invalid_id` | A path id is not a UUID |
 | 400 | `invalid_cursor` | Bad pagination cursor |
 | 400 | `invalid_bbox` | Malformed box, out of range, min ≥ max, or wider than 5 degrees |
+| 400 | `invalid_code` | Email code is wrong, expired, or used up after 5 wrong tries |
 | 400 | `invalid_target` | Friending/blocking/reporting yourself, or reporting your own rating |
 | 400 | `invalid_key` | Photo upload key does not belong to you |
 | 400 | `invalid_avatar` | `PATCH /me` `avatar` is not a valid character: unknown style, option or value |
-| 401 | `unauthorized` | Missing, invalid or expired access token; bad Apple token; bad/used refresh token; account deleted |
+| 401 | `unauthorized` | Missing, invalid or expired access token; bad Apple or Google token; bad/used refresh token; account deleted |
+| 401 | `invalid_credentials` | Email sign-in with a wrong email or password (the two are never told apart) |
+| 403 | `email_not_verified` | Email sign-in before the sign-up code was entered (only with the right password) |
 | 403 | `username_required` | The account has not picked a username yet. Every signed-in route except `/me` and `/users/availability` returns this until `PATCH /me {username}` succeeds |
 | 404 | `not_found` | Unknown route or resource. Blocked and deleted users also look "not found" |
 | 409 | `username_taken`, `already_friends` | |
@@ -67,9 +70,18 @@ Character styles (DiceBear 9.4.2, the same version in the app and the server): `
 | `POST /auth/apple` `{identityToken, nonce?, fullName?}` | `200 AuthResponse`. Creates the account on first sign-in. `identityToken` 20–8192 chars; `nonce` is the **raw** nonce (the app sent its SHA-256 hex to Apple); `fullName` ≤ 60 chars, only available to the app on the very first Apple sign-in, so send it then. `needsOnboarding` is `true` until a username is set. Errors: `401 unauthorized` (token invalid, wrong audience = bundle id, nonce mismatch) |
 | `POST /auth/refresh` `{refreshToken}` | `200 AuthResponse` with a **new** refresh token. The old one is dead after this call. Presenting an already-used refresh token revokes the whole session family (theft protection) and returns `401`, except within 30 seconds of its use: then the call succeeds and replaces the session's live token, so a client that lost the response can retry. Persist the new token before doing anything else, and never run two refreshes in parallel |
 | `POST /auth/logout` `{refreshToken}` | `204`. Revokes that session (also `204` when the token is unknown). The current access token stays valid until it expires |
+| `POST /auth/google` `{idToken}` | `200 AuthResponse`. The Google ID token from the iOS Google Sign-In SDK; its `aud` must be one of `GOOGLE_CLIENT_IDS`, otherwise `401`. `404` when `GOOGLE_CLIENT_IDS` is empty. Creates the account on first sign-in |
+| `POST /auth/email/signup` `{email, password}` | `202`, always (whether or not the address has an account). Emails a 6-digit code valid 15 minutes. `password` 8–128 chars; `email` is trimmed and lowercased. Nothing is created until the code is entered |
+| `POST /auth/email/verify` `{email, code}` | `200 AuthResponse`. Confirms the address and signs in: creates the account, or adds the password to the account that already has this email. `400 invalid_code` |
+| `POST /auth/email/resend` `{email}` | `202`, always. A new code for a pending sign-up |
+| `POST /auth/email/signin` `{email, password}` | `200 AuthResponse`. `401 invalid_credentials`, or `403 email_not_verified` if the code was never entered |
+| `POST /auth/password/forgot` `{email}` | `202`, always. Emails a reset code to an existing account |
+| `POST /auth/password/reset` `{email, code, newPassword}` | `200 AuthResponse`. Sets the password and revokes every other session. `400 invalid_code` |
 | `POST /auth/dev` `{username}` | `200 AuthResponse`. **Local development only**: `404` unless `DEV_AUTH_ENABLED=true`; the server refuses to boot with it on in production |
 
-Access tokens last 15 minutes (`expiresIn`), refresh tokens 30 days. Sign-in calls are limited to 30 per minute per IP (apple + refresh share the counter).
+Access tokens last 15 minutes (`expiresIn`), refresh tokens 30 days. Sign-in calls are limited to 30 per minute per IP (every `/auth/*` call except logout and dev shares the counter). Email and password routes answer `404` unless `EMAIL_AUTH_ENABLED=true`.
+
+**One account per verified email.** Apple, Google and email sign-in find the account with the same verified email and attach themselves to it. Apple's Hide My Email addresses and unverified Google emails never link; they get their own account.
 
 ## Me
 
@@ -149,7 +161,10 @@ Counted per signed-in user in Redis (fixed windows), except sign-in which is per
 | New place photos | 60 / day |
 | Reports | 20 / day |
 | `POST /places/resolve` | 120 / hour |
-| `POST /auth/apple` + `/auth/refresh` | 30 / minute per IP |
+| `POST /auth/*` (apple, google, email, password, refresh) | 30 / minute per IP |
+| Emails to one address (sign-up, resend, forgot) | 5 / hour |
+| Code attempts for one address | 10 / 15 minutes (and 5 wrong tries kill a code) |
+| Email sign-in attempts for one address | 10 / 15 minutes |
 
 ## Where this differs from the original design spec
 

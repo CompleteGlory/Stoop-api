@@ -372,6 +372,9 @@ All routes except `/auth/*` and `/health` need `Authorization: Bearer <accessTok
 | `POST /auth/apple` `{identityToken, nonce?, fullName?}` | Verifies the Apple identity token, creates the account on first sign-in. Returns `{accessToken, refreshToken, expiresIn, needsOnboarding, user}` |
 | `POST /auth/refresh` `{refreshToken}` | Rotates the refresh token. Reusing an old one more than 30 s later revokes the whole session family |
 | `POST /auth/logout` `{refreshToken}` | Revokes that session |
+| `POST /auth/google` `{idToken}` | Google sign-in; the token's audience must be one of `GOOGLE_CLIENT_IDS` |
+| `POST /auth/email/signup`, `/email/verify`, `/email/resend`, `/email/signin` | Email and password sign-in with a 6-digit code emailed through Resend (`EMAIL_AUTH_ENABLED`) |
+| `POST /auth/password/forgot`, `/password/reset` | Password reset by emailed code; signs out other sessions |
 | `POST /auth/dev` `{username}` | Development-only sign-in (see above) |
 | `GET /me`, `PATCH /me` `{username?, displayName?, ghostMode?, avatar?}` | Profile. `username` is 3-20 chars of `a-z 0-9 _ .`, unique, lowercased. `avatar` is a DiceBear character `{style, options}`, checked against that style's options |
 | `DELETE /me` | Deletes the account: ratings, friendships, blocks and sessions go; the row is anonymised; friends are told the marker is gone |

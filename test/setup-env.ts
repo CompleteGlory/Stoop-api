@@ -17,6 +17,9 @@ const defaults: Record<string, string> = {
   S3_FORCE_PATH_STYLE: 'true',
   S3_AUTO_CREATE_BUCKET: 'true',
   PUBLIC_BASE_URL: 'http://localhost:3000',
+  EMAIL_AUTH_ENABLED: 'true',
+  MAIL_PROVIDER: 'log',
+  GOOGLE_CLIENT_IDS: 'test-client.apps.googleusercontent.com',
 };
 for (const [key, value] of Object.entries(defaults)) {
   process.env[key] ??= value;

@@ -65,6 +65,23 @@ describe('loadConfig', () => {
     expect(loadConfig({ ...valid, LIVE_MIN_LOC_INTERVAL_MS: '0' }).live.minLocIntervalMs).toBe(0);
   });
 
+  it('keeps email sign-in off by default and reads Google client ids', () => {
+    const c = loadConfig({ ...valid, GOOGLE_CLIENT_IDS: ' a.apps.googleusercontent.com , b ' });
+    expect(c.email).toMatchObject({ enabled: false, provider: 'log' });
+    expect(c.google.clientIds).toEqual(['a.apps.googleusercontent.com', 'b']);
+    expect(loadConfig(valid).google.clientIds).toEqual([]);
+  });
+
+  it('refuses email codes in the log in production, and Resend without its settings', () => {
+    const prod = { ...valid, NODE_ENV: 'production', EMAIL_AUTH_ENABLED: 'true' };
+    expect(() => loadConfig(prod)).toThrow(/MAIL_PROVIDER=resend/);
+    expect(() => loadConfig({ ...prod, MAIL_PROVIDER: 'resend' })).toThrow(/RESEND_API_KEY and MAIL_FROM/);
+    expect(
+      loadConfig({ ...prod, MAIL_PROVIDER: 'resend', RESEND_API_KEY: 're_x', MAIL_FROM: 'Stoop <a@b.c>' }).email.enabled,
+    ).toBe(true);
+    expect(() => loadConfig({ ...valid, MAIL_PROVIDER: 'pigeon' })).toThrow(/MAIL_PROVIDER/);
+  });
+
   it('still reads the old AVATAR_PUBLIC_BASE_URL name', () => {
     const { PUBLIC_BASE_URL: _omit, ...old } = valid;
     expect(loadConfig({ ...old, AVATAR_PUBLIC_BASE_URL: 'https://api.example.com/' }).s3.publicBaseUrl).toBe(

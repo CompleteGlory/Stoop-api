@@ -13,6 +13,21 @@ export class User {
   @Column({ type: 'text', nullable: true })
   username: string | null;
 
+  /** Lowercase. Set by email sign-up or by Apple/Google when they report a verified address. */
+  @Column({ type: 'text', nullable: true })
+  email: string | null;
+
+  @Column({ name: 'email_verified_at', type: 'timestamptz', nullable: true })
+  emailVerifiedAt: Date | null;
+
+  /** scrypt hash (see auth/passwords.ts); null for accounts without a password. Never returned. */
+  @Column({ name: 'password_hash', type: 'text', nullable: true })
+  passwordHash: string | null;
+
+  /** Google's stable user id, when the account signs in with Google. */
+  @Column({ name: 'google_sub', type: 'text', nullable: true, unique: true })
+  googleSub: string | null;
+
   @Column({ name: 'display_name', type: 'text', default: '' })
   displayName: string;
 

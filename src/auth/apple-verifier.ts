@@ -8,6 +8,10 @@ export interface AppleIdentity {
   /** Apple's stable, app-scoped user id. */
   sub: string;
   email?: string;
+  /** Only a verified, real address may link to an existing account. */
+  emailVerified?: boolean;
+  /** A Hide My Email relay address, which never matches another account. */
+  isPrivateEmail?: boolean;
 }
 
 /** Abstract so tests (and local development) can swap the network call out. */
@@ -45,6 +49,12 @@ export class JoseAppleVerifier extends AppleVerifier {
         throw ApiError.unauthorized('The nonce does not match the Apple identity token');
       }
     }
-    return { sub: payload.sub, email: typeof payload.email === 'string' ? payload.email : undefined };
+    const flag = (value: unknown) => value === true || value === 'true';
+    return {
+      sub: payload.sub,
+      email: typeof payload.email === 'string' ? payload.email.toLowerCase() : undefined,
+      emailVerified: flag(payload.email_verified),
+      isPrivateEmail: flag(payload.is_private_email),
+    };
   }
 }

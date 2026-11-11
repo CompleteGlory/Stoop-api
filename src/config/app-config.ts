@@ -18,6 +18,19 @@ export interface AppConfig {
   };
   /** Enables `POST /auth/dev`, a sign-in that skips Apple. Never allowed in production. */
   devAuthEnabled: boolean;
+  google: {
+    /** OAuth client ids whose Google ID tokens are accepted (the `aud` claim). Empty turns Google sign-in off. */
+    clientIds: string[];
+  };
+  email: {
+    /** Email and password sign-up and sign-in. Off unless switched on. */
+    enabled: boolean;
+    /** `log` writes emails to the server log (development); `resend` sends them. */
+    provider: 'log' | 'resend';
+    resendApiKey: string;
+    /** The sender, such as `Stoop <hello@your-domain>`; the domain must be verified in Resend. */
+    from: string;
+  };
   live: {
     /** Updates from one person closer together than this are dropped (spec: 1 per 2 s). */
     minLocIntervalMs: number;
@@ -111,6 +124,15 @@ export function loadConfig(env: Env = process.env): AppConfig {
     },
     apple: { bundleId: devAuthEnabled ? (env.APPLE_BUNDLE_ID ?? '') : need('APPLE_BUNDLE_ID') },
     devAuthEnabled,
+    google: {
+      clientIds: (env.GOOGLE_CLIENT_IDS ?? '').split(',').map((id) => id.trim()).filter(Boolean),
+    },
+    email: {
+      enabled: bool(env.EMAIL_AUTH_ENABLED, false),
+      provider: env.MAIL_PROVIDER === 'resend' ? 'resend' : 'log',
+      resendApiKey: env.RESEND_API_KEY ?? '',
+      from: env.MAIL_FROM ?? '',
+    },
     live: {
       minLocIntervalMs: int(env.LIVE_MIN_LOC_INTERVAL_MS, 2000),
       pingIntervalMs: int(env.LIVE_PING_INTERVAL_MS, 20000),
@@ -134,6 +156,16 @@ export function loadConfig(env: Env = process.env): AppConfig {
     problems.push('LIVE_* settings must be integers (LIVE_MIN_LOC_INTERVAL_MS may be 0)');
   }
   if (!config.s3.publicBaseUrl) problems.push('PUBLIC_BASE_URL is required');
+  if (env.MAIL_PROVIDER && !['log', 'resend'].includes(env.MAIL_PROVIDER)) {
+    problems.push('MAIL_PROVIDER must be log or resend');
+  }
+  if (config.email.enabled && config.email.provider === 'resend' && (!config.email.resendApiKey || !config.email.from)) {
+    problems.push('MAIL_PROVIDER=resend needs RESEND_API_KEY and MAIL_FROM');
+  }
+  // codes written to the log would let anyone with log access take over accounts
+  if (isProd && config.email.enabled && config.email.provider !== 'resend') {
+    problems.push('EMAIL_AUTH_ENABLED in production needs MAIL_PROVIDER=resend');
+  }
 
   if (problems.length > 0) {
     throw new Error(`Invalid configuration:\n- ${problems.join('\n- ')}`);

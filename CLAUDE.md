@@ -64,6 +64,7 @@ docs/                          the docs above
 8. One live connection per user, and one API instance (live fan-out is in memory).
 9. Account deletion anonymises the user row and removes ratings, friendships, blocks, sessions and their place photos (rows and files), then recomputes averages.
 10. A username is mandatory: without one, only `/me` and `/users/availability` work (`403 username_required`) and `/live` refuses the upgrade. A username can change but never be cleared.
+11. Passwords are scrypt hashes and email codes are SHA-256 hashes; neither, nor a code, is ever logged or returned (`MAIL_PROVIDER=log` is development only, refused in production). Sign-up, resend and forgot always answer the same, so they never reveal which emails have accounts. Accounts link only through a *verified* email; Apple relay addresses never link.
 
 ## Backend conventions
 
