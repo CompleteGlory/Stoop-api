@@ -28,6 +28,7 @@ Switch on `code`, show `message` only for debugging.
 | 400 | `invalid_target` | Friending/blocking/reporting yourself, or reporting your own rating |
 | 400 | `invalid_key` | Avatar upload key does not belong to you |
 | 401 | `unauthorized` | Missing, invalid or expired access token; bad Apple token; bad/used refresh token; account deleted |
+| 403 | `username_required` | The account has not picked a username yet. Every signed-in route except `/me` and `/me/avatar/*` returns this until `PATCH /me {username}` succeeds |
 | 404 | `not_found` | Unknown route or resource. Blocked and deleted users also look "not found" |
 | 409 | `username_taken`, `already_friends` | |
 | 422 | `username_reserved`, `invalid_image`, `image_too_large` | |
@@ -72,7 +73,7 @@ Access tokens last 15 minutes (`expiresIn`), refresh tokens 30 days. Sign-in cal
 | Request | Response |
 | --- | --- |
 | `GET /me` | `SelfUser` |
-| `PATCH /me` `{username?, displayName?, ghostMode?, avatarPreset?}` | `200 SelfUser`. `username`: 3–20 chars of `a-z 0-9 _ .`, trimmed and lowercased by the server, unique; reserved: `admin administrator support help root moderator official staff null undefined`. `displayName`: 1–40 chars. `avatarPreset`: one of the ids above (also deletes an uploaded photo). `ghostMode` also updates a live socket immediately. Errors: `409 username_taken`, `422 username_reserved` |
+| `PATCH /me` `{username?, displayName?, ghostMode?, avatarPreset?}` | `200 SelfUser`. `username`: 3–20 chars of `a-z 0-9 _ .`, trimmed and lowercased by the server, unique, can be changed but never cleared (`null` gives `400 validation_failed`); reserved: `admin administrator support help root moderator official staff null undefined`. `displayName`: 1–40 chars. `avatarPreset`: one of the ids above (also deletes an uploaded photo). `ghostMode` also updates a live socket immediately. Errors: `409 username_taken`, `422 username_reserved` |
 | `DELETE /me` | `204`. Deletes ratings, friendships, blocks and sessions, anonymises the row, removes the photo, recomputes place averages, tells friends' sockets the marker is gone. The current access token stops working right away (`401`) |
 | `POST /me/avatar/upload-url` `{contentType: "image/jpeg" \| "image/png", contentLength: 1..5242880}` | `200 {key, uploadUrl, method: "PUT", headers: {"Content-Type": ...}, expiresIn: 300}`. 10 per hour |
 | `POST /me/avatar/confirm` `{key}` | `200 SelfUser`. Errors: `400 invalid_key`, `404 not_found` (nothing was uploaded under that key), `422 image_too_large`, `422 invalid_image` |

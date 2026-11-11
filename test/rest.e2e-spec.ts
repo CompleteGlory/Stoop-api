@@ -80,6 +80,53 @@ describe('REST API (real Postgres + PostGIS and Redis)', () => {
       expect(me.body.username).toBe('alice');
     });
 
+    it('allows only /me until a username is chosen', async () => {
+      const signIn = await api()
+        .post('/auth/apple')
+        .send({ identityToken: 'fake-apple-token-for-newcomer' })
+        .expect(200);
+      const auth = { Authorization: `Bearer ${signIn.body.accessToken}` };
+
+      const blocked = [
+        api().get('/friends'),
+        api().get('/blocks'),
+        api().get('/users/search?q=ali'),
+        api().get('/places?bbox=31.2,30.0,31.3,30.1'),
+        api().post('/places/resolve').send({ name: 'Cafe Riche', ...downtown }),
+      ];
+      for (const call of blocked) {
+        const res = await call.set(auth).expect(403);
+        expect(res.body.error.code).toBe('username_required');
+      }
+
+      await api().get('/me').set(auth).expect(200);
+      await api().patch('/me').set(auth).send({ username: 'newcomer' }).expect(200);
+      await api().get('/friends').set(auth).expect(200);
+
+      const refreshed = await api()
+        .post('/auth/refresh')
+        .send({ refreshToken: signIn.body.refreshToken })
+        .expect(200);
+      expect(refreshed.body.needsOnboarding).toBe(false);
+    });
+
+    it('lets an account without a username delete itself', async () => {
+      const signIn = await api()
+        .post('/auth/apple')
+        .send({ identityToken: 'fake-apple-token-for-newcomer' })
+        .expect(200);
+      await api().delete('/me').set({ Authorization: `Bearer ${signIn.body.accessToken}` }).expect(204);
+    });
+
+    it('never lets a username be cleared', async () => {
+      const alice = await signUp(app, 'alice');
+      const res = await api().patch('/me').set(alice.auth).send({ username: null }).expect(400);
+      expect(res.body.error.code).toBe('validation_failed');
+
+      const me = await api().get('/me').set(alice.auth).expect(200);
+      expect(me.body.username).toBe('alice');
+    });
+
     it('switches to a preset avatar and rejects unknown ones', async () => {
       const alice = await signUp(app, 'alice');
       const ok = await api().patch('/me').set(alice.auth).send({ avatarPreset: 'owl' }).expect(200);

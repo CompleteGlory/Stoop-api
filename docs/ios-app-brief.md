@@ -73,7 +73,7 @@ extension JSONDecoder {
 **Auth session** (an `actor`, so refreshes are serialised):
 
 1. Sign in with Apple: generate a random raw nonce, set `request.nonce` to its **SHA-256 hex**, then `POST /auth/apple { identityToken, nonce: <raw nonce>, fullName }`. The name is only available on the very first authorisation, so send it when present.
-2. If `needsOnboarding` is true, show the username picker (`PATCH /me`, handle `409 username_taken`, `422 username_reserved`, validation).
+2. If `needsOnboarding` is true, show the username picker as a mandatory step before the map (`PATCH /me`, handle `409 username_taken`, `422 username_reserved`, validation). The server enforces this: until a username is set, every route except `/me` returns `403 username_required` and `/live` refuses the upgrade with HTTP 403. Check `needsOnboarding` after refresh too, so an app killed mid-onboarding returns to the picker.
 3. Any `401` → one refresh → retry the request once. Refresh tokens **rotate**: store the new one in the Keychain before using the new access token, and never refresh in parallel (a reused refresh token revokes the whole session and forces a new sign-in). Failed refresh → signed out.
 4. Sign out: `POST /auth/logout` with the refresh token, clear the Keychain.
 

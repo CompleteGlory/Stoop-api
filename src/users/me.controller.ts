@@ -1,9 +1,11 @@
 import { Body, Controller, Delete, Get, HttpCode, Patch, Post } from '@nestjs/common';
-import { CurrentUser, type AuthUser } from '../common/decorators.js';
+import { AllowWithoutUsername, CurrentUser, type AuthUser } from '../common/decorators.js';
 import { AvatarService } from './avatar.service.js';
 import { AvatarConfirmDto, AvatarUploadUrlDto, UpdateMeDto } from './users.dto.js';
 import { UsersService } from './users.service.js';
 
+// onboarding happens here, and an account must be deletable before it is finished
+@AllowWithoutUsername()
 @Controller('me')
 export class MeController {
   constructor(

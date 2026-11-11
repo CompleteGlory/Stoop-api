@@ -63,6 +63,7 @@ docs/                          the docs above
 7. The bucket stays private. Photos are re-encoded to a 256 px JPEG (EXIF stripped) before they are served.
 8. One live connection per user, and one API instance (live fan-out is in memory).
 9. Account deletion anonymises the user row and removes ratings, friendships, blocks, sessions and the photo, then recomputes averages.
+10. A username is mandatory: without one, only `/me` works (`403 username_required`) and `/live` refuses the upgrade. A username can change but never be cleared.
 
 ## Backend conventions
 

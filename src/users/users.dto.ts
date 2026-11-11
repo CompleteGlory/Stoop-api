@@ -9,6 +9,7 @@ import {
   Matches,
   Max,
   Min,
+  ValidateIf,
 } from 'class-validator';
 import { ALLOWED_AVATAR_TYPES, MAX_AVATAR_BYTES } from './avatar.service.js';
 import { AVATAR_PRESETS } from './avatar-presets.js';
@@ -18,7 +19,8 @@ const lower = ({ value }: { value: unknown }) =>
   typeof value === 'string' ? value.trim().toLowerCase() : value;
 
 export class UpdateMeDto {
-  @IsOptional()
+  // not @IsOptional: that also accepts null, which would erase the username
+  @ValidateIf((_, value) => value !== undefined)
   @IsString()
   @Transform(lower)
   @Matches(/^[a-z0-9_.]{3,20}$/, {

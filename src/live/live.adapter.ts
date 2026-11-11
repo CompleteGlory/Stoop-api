@@ -1,6 +1,7 @@
 import type { IncomingMessage } from 'node:http';
 import type { INestApplicationContext } from '@nestjs/common';
 import { WsAdapter } from '@nestjs/platform-ws';
+import { OnboardingService } from '../auth/onboarding.service.js';
 import { TokensService } from '../auth/tokens.service.js';
 import { parseFrame } from './live.protocol.js';
 
@@ -20,6 +21,7 @@ export class LiveWsAdapter extends WsAdapter {
   constructor(
     app: INestApplicationContext,
     private readonly tokens: TokensService,
+    private readonly onboarding: OnboardingService,
   ) {
     super(app);
     this.setMessageParser((data) => parseFrame(data));
@@ -32,10 +34,15 @@ export class LiveWsAdapter extends WsAdapter {
         const match = info.req.headers.authorization?.match(/^Bearer\s+(.+)$/i);
         if (!match) return done(false, 401, 'Unauthorized');
         this.tokens.verifyAccessToken(match[1]).then(
-          (userId) => {
-            (info.req as any)[LIVE_USER_ID] = userId;
-            done(true);
-          },
+          (userId) =>
+            this.onboarding.hasUsername(userId).then(
+              (onboarded) => {
+                if (!onboarded) return done(false, 403, 'Username required');
+                (info.req as any)[LIVE_USER_ID] = userId;
+                done(true);
+              },
+              () => done(false, 500, 'Internal error'),
+            ),
           () => done(false, 401, 'Unauthorized'),
         );
       },

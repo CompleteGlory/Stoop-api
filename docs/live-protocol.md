@@ -4,7 +4,7 @@ Code: `src/live/live.protocol.ts` (wire format and validation), `live.service.ts
 
 ## Connecting
 
-`wss://place-rating-api-production.up.railway.app/live` (local: `ws://localhost:3000/live`) with the header `Authorization: Bearer <accessToken>` on the upgrade request. With `URLSessionWebSocketTask` build a `URLRequest`, set that header, then `webSocketTask(with: request)`. A bad or expired token gets an **HTTP 401 during the handshake** and never becomes a socket, so refresh the access token first (it only lives 15 minutes) and retry.
+`wss://place-rating-api-production.up.railway.app/live` (local: `ws://localhost:3000/live`) with the header `Authorization: Bearer <accessToken>` on the upgrade request. With `URLSessionWebSocketTask` build a `URLRequest`, set that header, then `webSocketTask(with: request)`. A bad or expired token gets an **HTTP 401 during the handshake** and never becomes a socket, so refresh the access token first (it only lives 15 minutes) and retry. An account with no username yet gets an **HTTP 403** instead: finish onboarding first, refreshing will not help.
 
 One connection per person: connecting again closes the older socket with `4409`.
 

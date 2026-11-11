@@ -384,7 +384,7 @@ Rate limits (per person, in Redis): 30 rating writes/hour, 20 friend requests/da
 
 ## Live location: `ws://host/live`
 
-Connect with `Authorization: Bearer <accessToken>` on the upgrade request (a bad token gets an HTTP 401, no socket). Frames are JSON `{"t": type, "d": data}`.
+Connect with `Authorization: Bearer <accessToken>` on the upgrade request (a bad token gets an HTTP 401, an account with no username an HTTP 403, and neither gets a socket). Frames are JSON `{"t": type, "d": data}`.
 
 | Direction | Frame | Meaning |
 | --- | --- | --- |

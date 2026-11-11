@@ -59,6 +59,22 @@ describe('live location socket', () => {
     expect(status).toBe(401);
   });
 
+  it('refuses the upgrade until a username is chosen', async () => {
+    const signIn = await api()
+      .post('/auth/apple')
+      .send({ identityToken: 'fake-apple-token-for-newcomer' })
+      .expect(200);
+    await expect(LiveClient.connect(port, signIn.body.accessToken)).rejects.toThrow('HTTP 403');
+
+    await api()
+      .patch('/me')
+      .set({ Authorization: `Bearer ${signIn.body.accessToken}` })
+      .send({ username: 'newcomer' })
+      .expect(200);
+    const { client } = await LiveClient.connectReady(port, signIn.body.accessToken);
+    open.push(client);
+  });
+
   it('says hello with the ghost flag and the last known position of friends only', async () => {
     const alice = await signUp(app, 'alice');
     const bob = await signUp(app, 'bobby');
