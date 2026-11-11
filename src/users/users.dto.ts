@@ -1,18 +1,5 @@
-import { Transform, Type } from 'class-transformer';
-import {
-  IsBoolean,
-  IsIn,
-  IsInt,
-  IsOptional,
-  IsString,
-  Length,
-  Matches,
-  Max,
-  Min,
-  ValidateIf,
-} from 'class-validator';
-import { ALLOWED_AVATAR_TYPES, MAX_AVATAR_BYTES } from './avatar.service.js';
-import { AVATAR_PRESETS } from './avatar-presets.js';
+import { Transform } from 'class-transformer';
+import { IsBoolean, IsObject, IsOptional, IsString, Length, Matches, ValidateIf } from 'class-validator';
 
 const trim = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value);
 const lower = ({ value }: { value: unknown }) =>
@@ -40,27 +27,10 @@ export class UpdateMeDto {
   @IsBoolean()
   ghostMode?: boolean;
 
-  /** Switches to one of the preset avatars. Photos go through the upload endpoints. */
-  @IsOptional()
-  @IsIn(AVATAR_PRESETS)
-  avatarPreset?: string;
-}
-
-export class AvatarUploadUrlDto {
-  @IsIn(ALLOWED_AVATAR_TYPES)
-  contentType: (typeof ALLOWED_AVATAR_TYPES)[number];
-
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  @Max(MAX_AVATAR_BYTES)
-  contentLength: number;
-}
-
-export class AvatarConfirmDto {
-  @IsString()
-  @Length(10, 200)
-  key: string;
+  /** The person's DiceBear character, `{ style, options }`; checked in full by `validateCharacter`. */
+  @ValidateIf((_, value) => value !== undefined)
+  @IsObject()
+  avatar?: Record<string, unknown>;
 }
 
 /** Deliberately loose: a badly formed name is an answer (`invalid`), not a request error. */

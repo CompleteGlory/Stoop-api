@@ -27,7 +27,7 @@ PlaceRating/
   Services/           APIClient, AuthSession (Keychain, refresh), LiveSocket, LocationService
   Features/Map/       MapScreen, MapViewModel, FriendAnnotation, PlacePin, PulseRing
   Features/Sheets/    BrowseSheet, PlaceSheet, PlaceDetailSheet, ProfileSheet, PeopleSearch
-  Resources/Avatars/  the 24 preset images, named by preset id
+  Resources/          DiceBear JavaScript bundle (rendered on-device), string catalogs
 PlaceRatingTests/     MapViewModel with fakes, decoding fixtures, throttle rule
 ```
 
@@ -39,8 +39,8 @@ PlaceRatingTests/     MapViewModel with fakes, decoding fixtures, throttle rule
 - **Debug-only sign-in:** in `#if DEBUG`, a small field that calls `POST /auth/dev {"username":"alice"}` and stores the returned tokens like a real sign-in. Production has **no** dev login, and real Sign in with Apple needs the Apple capability, signing and a matching bundle id.
 - **Two accounts, two simulators:** run alice and bob on two simulators (each has its own simulated location: Features → Location) to test live friends and ratings. Make them friends through the app or with curl.
 - **Base URL per configuration:** Debug → `http://localhost:3000` / `ws://localhost:3000/live`; Release → `https://place-rating-api-production.up.railway.app` / `wss://…/live`. Plain `http` needs an App Transport Security exception for local development (`NSAllowsLocalNetworking`, Debug only).
-- **Real device against your Mac:** use the Mac's LAN address, and set `AVATAR_PUBLIC_BASE_URL` in the backend `.env` to that same address, because avatar URLs in responses are built from it. The device may show the local-network permission prompt.
-- The local avatar store (moto) forgets files when its container restarts; re-upload or pick a preset.
+- **Real device against your Mac:** use the Mac's LAN address, and set `PUBLIC_BASE_URL` in the backend `.env` to that same address, because photo URLs in responses are built from it. The device may show the local-network permission prompt.
+- The local photo store (moto) forgets files when its container restarts; upload again.
 
 ## Networking
 
@@ -68,7 +68,7 @@ extension JSONDecoder {
 
 **Ids.** The server returns lowercase UUID strings and accepts any case. Swift's `UUID.uuidString` is uppercase, so either model ids as `String` or lowercase them before comparing or building keys.
 
-**Models** mirror the "Shared types" block of `api-contract.md`. Traps: `username` is optional (nil until onboarding), `avatar.url` is nil for presets, `comment` and `category` are nullable, `heading` is nullable on the socket, `ts` on the socket is epoch milliseconds (not seconds).
+**Models** mirror the "Shared types" block of `api-contract.md`. Traps: `username` is optional (nil until onboarding), `avatar` is nil until a character is picked, `comment` and `category` are nullable, `heading` is nullable on the socket, `ts` on the socket is epoch milliseconds (not seconds).
 
 **Auth session** (an `actor`, so refreshes are serialised):
 
@@ -79,7 +79,7 @@ extension JSONDecoder {
 
 **Places.** Selecting a built-in point of interest yields an `MKMapItem`; send `POST /places/resolve` with `appleId` (`MKMapItem.identifier`), name, coordinate and a category label, then use the returned place `id` for `GET /places/:id` and `PUT /places/:id/rating`. After the camera settles (debounce 400 ms) fetch `GET /places?bbox=…` for the visible region and draw pins only for `ratingCount > 0`. Check the current MapKit-for-SwiftUI docs for how a tapped feature becomes an `MKMapItem` (`MapSelection`, `MapFeature`, `MKMapItemRequest`) and for `MKMapItem.identifier`: both are iOS 18 APIs. SwiftUI `Map` has no built-in annotation clustering as far as known; start without it (a box returns at most 200 places) and decide later between grid clustering by span or wrapping `MKMapView`.
 
-**Avatars.** Presets: render the bundled image named by `avatar.value`. Uploads: load `avatar.url` with `AsyncImage` over a shared `URLCache` (URLs are immutable). Photo flow: `PhotosPicker` → downscale to at most 1024 px JPEG → `POST /me/avatar/upload-url {contentType, contentLength}` → `PUT` the bytes to `uploadUrl` with exactly the returned headers and exactly that byte count → `POST /me/avatar/confirm {key}` → replace the cached `SelfUser`.
+**Avatars.** DiceBear 9.4.2 characters, drawn on the phone: the app bundles DiceBear's JavaScript and renders `{style, options}` to an image (cached by options), because DiceBear has no Swift library. The character screen comes right after the username; the server validates the same options against the same version, so keep the two versions equal. **Place photos:** `PhotosPicker` → convert to JPEG at most 2048 px → `POST /places/:id/photos/upload-url {contentType, contentLength}` → `PUT` the bytes to `uploadUrl` with exactly the returned headers and byte count → `POST /places/:id/photos {kind, key}`. Show `thumbnailUrl` in lists and `url` full screen, through a shared `URLCache` (URLs are immutable).
 
 ## Location and live socket
 
@@ -96,7 +96,7 @@ extension JSONDecoder {
 
 **8. Live friends**, done when two phones see each other move and sharing stops when backgrounded: swap the mock for the real `LiveSocket`; throttle (3 s, 10 m, 15 s heartbeat); reconnect and `hello` handling; avatar markers with dim/remove; ghost toggle; close on background.
 
-**9. Polish**, done when a friend installs from TestFlight and completes the two-phone check unaided: report/block UI on every user, rating and avatar; empty and error states; terms acceptance at sign-up; account deletion in the profile sheet (`DELETE /me`); privacy labels and policy URL; README with a demo recording.
+**9. Polish**, done when a friend installs from TestFlight and completes the two-phone check unaided: report/block UI on every user, rating and photo; empty and error states; terms acceptance at sign-up; account deletion in the profile sheet (`DELETE /me`); privacy labels and policy URL; README with a demo recording.
 
 ## Tests worth having
 

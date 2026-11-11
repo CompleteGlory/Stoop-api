@@ -34,7 +34,7 @@ export interface AppConfig {
     accessKeyId: string;
     secretAccessKey: string;
     forcePathStyle: boolean;
-    /** The public address of this API, without a trailing slash: avatar URLs are `<this>/avatars/<user>/<file>.jpg`. */
+    /** The public address of this API, without a trailing slash: photo URLs are `<this>/photos/<place>/<file>.jpg`. */
     publicBaseUrl: string;
     /** Create the bucket on startup when it is missing (development only). */
     autoCreateBucket: boolean;
@@ -123,7 +123,8 @@ export function loadConfig(env: Env = process.env): AppConfig {
       accessKeyId: need('S3_ACCESS_KEY_ID'),
       secretAccessKey: need('S3_SECRET_ACCESS_KEY'),
       forcePathStyle: bool(env.S3_FORCE_PATH_STYLE, false),
-      publicBaseUrl: (env.AVATAR_PUBLIC_BASE_URL ?? '').replace(/\/+$/, ''),
+      // AVATAR_PUBLIC_BASE_URL is the old name, still read so existing deploys keep working
+      publicBaseUrl: (env.PUBLIC_BASE_URL || env.AVATAR_PUBLIC_BASE_URL || '').replace(/\/+$/, ''),
       autoCreateBucket: bool(env.S3_AUTO_CREATE_BUCKET, false) && !isProd,
     },
   };
@@ -132,7 +133,7 @@ export function loadConfig(env: Env = process.env): AppConfig {
   if (!(minLocIntervalMs >= 0) || !(pingIntervalMs > 0) || !(locTtlSec > 0)) {
     problems.push('LIVE_* settings must be integers (LIVE_MIN_LOC_INTERVAL_MS may be 0)');
   }
-  if (!config.s3.publicBaseUrl) problems.push('AVATAR_PUBLIC_BASE_URL is required');
+  if (!config.s3.publicBaseUrl) problems.push('PUBLIC_BASE_URL is required');
 
   if (problems.length > 0) {
     throw new Error(`Invalid configuration:\n- ${problems.join('\n- ')}`);

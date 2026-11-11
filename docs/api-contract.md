@@ -4,7 +4,7 @@ The source of truth is the code (`src/**/*.controller.ts`, `*.dto.ts`, `*.servic
 
 - **Base URL:** production `https://place-rating-api-production.up.railway.app` · local `http://localhost:3000`
 - **Format:** JSON, camelCase. Send `Content-Type: application/json`. Unknown body fields are rejected (`400 validation_failed`).
-- **Auth:** `Authorization: Bearer <accessToken>` on everything except `/auth/*`, `/health` and `GET /avatars/...`.
+- **Auth:** `Authorization: Bearer <accessToken>` on everything except `/auth/*`, `/health` and `GET /photos/...`.
 - **Timestamps:** ISO-8601 UTC **with milliseconds**, e.g. `2026-11-11T06:54:12.345Z`. Swift's default `.iso8601` decoder rejects the fractional part; use a custom strategy (see `ios-app-brief.md`).
 - **Ids:** UUID strings. A malformed id in a path gives `400 invalid_id`.
 - **Pagination:** only `GET /places/:id/ratings`. `?limit=` (default 20, max 50) and `?cursor=` (opaque, copy `nextCursor` from the previous page). `nextCursor` is `null` on the last page.
@@ -26,9 +26,10 @@ Switch on `code`, show `message` only for debugging.
 | 400 | `invalid_cursor` | Bad pagination cursor |
 | 400 | `invalid_bbox` | Malformed box, out of range, min ≥ max, or wider than 5 degrees |
 | 400 | `invalid_target` | Friending/blocking/reporting yourself, or reporting your own rating |
-| 400 | `invalid_key` | Avatar upload key does not belong to you |
+| 400 | `invalid_key` | Photo upload key does not belong to you |
+| 400 | `invalid_avatar` | `PATCH /me` `avatar` is not a valid character: unknown style, option or value |
 | 401 | `unauthorized` | Missing, invalid or expired access token; bad Apple token; bad/used refresh token; account deleted |
-| 403 | `username_required` | The account has not picked a username yet. Every signed-in route except `/me`, `/me/avatar/*` and `/users/availability` returns this until `PATCH /me {username}` succeeds |
+| 403 | `username_required` | The account has not picked a username yet. Every signed-in route except `/me` and `/users/availability` returns this until `PATCH /me {username}` succeeds |
 | 404 | `not_found` | Unknown route or resource. Blocked and deleted users also look "not found" |
 | 409 | `username_taken`, `already_friends` | |
 | 422 | `username_reserved`, `invalid_image`, `image_too_large` | |
@@ -40,10 +41,12 @@ Other generic codes can appear from the framework: `bad_request`, `forbidden`, `
 ## Shared types
 
 ```text
-Avatar          { kind: "preset" | "upload", value: string, url: string | null }
-                  preset: value is one of the 24 preset ids, url is null (the app draws the artwork)
-                  upload: value is the object key "avatars/<userId>/<uuid>.jpg", url is absolute
-PublicUser      { id, username: string | null, displayName, avatar: Avatar }
+Avatar          { style: string, options: { [option]: string } }
+                  a DiceBear 9.4.2 character; the app draws it, the server only checks it
+PublicUser      { id, username: string | null, displayName, avatar: Avatar | null }
+                  avatar is null until the person picks a character
+PlacePhoto      { id, kind: "place" | "menu", url, thumbnailUrl, width, height, createdAt, user: PublicUser }
+                  url: JPEG at most 1600 px; thumbnailUrl: 400 px square; both absolute and immutable
 SelfUser        PublicUser + { ghostMode: boolean, createdAt }
 Place           { id, appleId: string | null, name, category: string | null,
                   latitude, longitude, avgRating: number, ratingCount: number }
@@ -55,7 +58,7 @@ FriendshipEntry { id, user: PublicUser, since }      id is the friendship id
 AuthResponse    { accessToken, refreshToken, expiresIn: seconds (900), needsOnboarding: boolean, user: SelfUser }
 ```
 
-Preset ids (ship matching artwork in the app): `fox panda koala owl frog tiger whale penguin cat dog rabbit bear lion octopus turtle dolphin giraffe monkey hedgehog sloth unicorn robot alien ghost`. New accounts start with `fox`.
+Character styles (DiceBear 9.4.2, the same version in the app and the server): `adventurer avataaars bigEars bigSmile croodles dylan lorelei micah miniavs notionists openPeeps personas pixelArt toonHead`. `options` maps an option of that style to one of its values, to a 6-digit lowercase hex colour for colour options, or to `none` for parts the style can leave out (it has a matching `…Probability` option). Picture settings (`seed`, `backgroundColor`, `scale`, `flip` and similar) and `…Probability` options are refused. New accounts have no avatar.
 
 ## Auth
 
@@ -68,18 +71,14 @@ Preset ids (ship matching artwork in the app): `fox panda koala owl frog tiger w
 
 Access tokens last 15 minutes (`expiresIn`), refresh tokens 30 days. Sign-in calls are limited to 30 per minute per IP (apple + refresh share the counter).
 
-## Me and avatars
+## Me
 
 | Request | Response |
 | --- | --- |
 | `GET /me` | `SelfUser` |
-| `PATCH /me` `{username?, displayName?, ghostMode?, avatarPreset?}` | `200 SelfUser`. `username`: 3–20 chars of `a-z 0-9 _ .`, trimmed and lowercased by the server, unique, can be changed but never cleared (`null` gives `400 validation_failed`); reserved: `admin administrator support help root moderator official staff null undefined`. `displayName`: 1–40 chars. `avatarPreset`: one of the ids above (also deletes an uploaded photo). `ghostMode` also updates a live socket immediately. Errors: `409 username_taken`, `422 username_reserved` |
-| `DELETE /me` | `204`. Deletes ratings, friendships, blocks and sessions, anonymises the row, removes the photo, recomputes place averages, tells friends' sockets the marker is gone. The current access token stops working right away (`401`) |
-| `POST /me/avatar/upload-url` `{contentType: "image/jpeg" \| "image/png", contentLength: 1..5242880}` | `200 {key, uploadUrl, method: "PUT", headers: {"Content-Type": ...}, expiresIn: 300}`. 10 per hour |
-| `POST /me/avatar/confirm` `{key}` | `200 SelfUser`. Errors: `400 invalid_key`, `404 not_found` (nothing was uploaded under that key), `422 image_too_large`, `422 invalid_image` |
-| `GET /avatars/:userId/:file.jpg` | **Public, no token.** `200 image/jpeg`, `Cache-Control: public, max-age=31536000, immutable`. This is the address in `avatar.url`. `404` for anything else |
+| `PATCH /me` `{username?, displayName?, ghostMode?, avatar?}` | `200 SelfUser`. `username`: 3–20 chars of `a-z 0-9 _ .`, trimmed and lowercased by the server, unique, can be changed but never cleared (`null` gives `400 validation_failed`); reserved: `admin administrator support help root moderator official staff null undefined`. `displayName`: 1–40 chars. `avatar`: a character `{style, options}` as described under Shared types; anything else gives `400 invalid_avatar`. `ghostMode` also updates a live socket immediately. Errors: `409 username_taken`, `422 username_reserved` |
+| `DELETE /me` | `204`. Deletes ratings, friendships, blocks, sessions and the person's place photos (with their files), anonymises the row, recomputes place averages, tells friends' sockets the marker is gone. The current access token stops working right away (`401`) |
 
-Upload recipe: (1) `POST upload-url` with the exact byte count of the file; (2) `PUT` the file bytes to `uploadUrl` with exactly the returned `headers` and exactly that many bytes (type and length are part of the signature, a mismatch is rejected by the bucket); (3) `POST confirm {key}`. The server re-encodes to a 256×256 JPEG, strips EXIF, and deletes the original and your previous photo. A new photo gets a new URL, so image caches never go stale.
 
 ## Users
 
@@ -100,6 +99,20 @@ Upload recipe: (1) `POST upload-url` with the exact byte count of the file; (2) 
 
 Rating writes (PUT and DELETE together) are limited to 30 per hour. A rating saves when a star is tapped; the comment saves when its field loses focus (both are a `PUT` with the current stars and comment).
 
+## Place photos
+
+People add photos of a place or of its menu. The upload goes straight to the private bucket, then the server checks and re-encodes it.
+
+| Request | Response |
+| --- | --- |
+| `POST /places/:id/photos/upload-url` `{contentType: "image/jpeg" \| "image/png", contentLength: 1..10485760}` | `200 {key, uploadUrl, method: "PUT", headers: {"Content-Type": ...}, expiresIn: 300}`. `404` for an unknown place. 30 per hour |
+| `POST /places/:id/photos` `{kind: "place" \| "menu", key}` | `201 PlacePhoto`. Re-encodes to a JPEG of at most 1600 px plus a 400 px square thumbnail, EXIF removed, and deletes the raw upload. Errors: `400 invalid_key`, `404 not_found` (unknown place, or nothing uploaded under that key), `422 image_too_large`, `422 invalid_image`. 60 per day |
+| `GET /places/:id/photos?kind&limit&cursor` | `200 { items: PlacePhoto[], nextCursor }`, newest first, optional `kind` filter, paged like ratings. Hides blocked people and deleted accounts |
+| `DELETE /places/:id/photos/:photoId` | `204`. Only the person who added it; anyone else gets `404` |
+| `GET /photos/:placeId/:file.jpg` | **Public, no token.** `200 image/jpeg`, `Cache-Control: public, max-age=31536000, immutable`. These are the `url` and `thumbnailUrl` addresses. `404` for anything else |
+
+Upload recipe: (1) `POST upload-url` with the exact byte count of the file; (2) `PUT` the file bytes to `uploadUrl` with exactly the returned `headers` and exactly that many bytes (type and length are part of the signature, a mismatch is rejected by the bucket); (3) `POST /places/:id/photos {kind, key}`. Convert HEIC to JPEG on the phone first.
+
 ## Friends and blocks
 
 | Request | Response |
@@ -116,7 +129,7 @@ Friend changes and blocks take effect on a connected live socket immediately (pe
 
 ## Reports
 
-`POST /reports` `{targetType: "user" | "rating" | "avatar", targetId, reason: "spam" | "abuse" | "inappropriate" | "impersonation" | "other", details?: ≤500}` → `201 { id, status: "open" }`. For `user` and `avatar` the `targetId` is the user id; for `rating` it is the rating id. `400 invalid_target` (yourself or your own rating), `404 not_found`. 20 per day. There is no admin UI yet: reports are read in SQL (see `operations.md`).
+`POST /reports` `{targetType: "user" | "rating" | "photo", targetId, reason: "spam" | "abuse" | "inappropriate" | "impersonation" | "other", details?: ≤500}` → `201 { id, status: "open" }`. For `user` the `targetId` is the user id, for `rating` the rating id, for `photo` the photo id. `400 invalid_target` (yourself, your own rating or your own photo), `404 not_found`. 20 per day. There is no admin UI yet: reports are read in SQL (see `operations.md`).
 
 ## Health
 
@@ -132,7 +145,8 @@ Counted per signed-in user in Redis (fixed windows), except sign-in which is per
 | Friend requests | 20 / day |
 | Username searches | 60 / hour |
 | Username availability checks | 300 / hour |
-| Avatar upload URLs | 10 / hour |
+| Photo upload URLs | 30 / hour |
+| New place photos | 60 / day |
 | Reports | 20 / day |
 | `POST /places/resolve` | 120 / hour |
 | `POST /auth/apple` + `/auth/refresh` | 30 / minute per IP |
@@ -142,9 +156,9 @@ Counted per signed-in user in Redis (fixed windows), except sign-in which is per
 The spec (`product-spec.md`) was written before the code. Build the client against **this** file:
 
 - `POST /auth/apple` returns `needsOnboarding` (not `isNew`) and `expiresIn`.
-- `POST /me/avatar/upload-url` returns `{key, uploadUrl, method, headers, expiresIn}` (not `uploadId`); confirm takes `{key}`.
+- Avatars are DiceBear characters (`{style, options}`), not presets or uploaded photos; photos belong to places instead (`/places/:id/photos`).
 - `GET /places` items have no `myStars`; `GET /places/:id` has `myRating`. Friends' ratings come from `GET /places/:id/ratings` plus `/friends`.
 - `PUT rating` returns `{rating, place}`; `DELETE rating` returns `204` with no body (re-fetch the place if you need the average).
 - `GET /places` also returns unrated places (filter on `ratingCount > 0`).
 - Usernames may contain `.` as well as letters, digits and `_`.
-- The photo thumbnail is produced on confirm and served by the API at `/avatars/...`, not from a bucket URL.
+- Photos and thumbnails are produced on the server and served by the API at `/photos/...`, not from a bucket URL.

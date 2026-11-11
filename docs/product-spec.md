@@ -12,12 +12,13 @@ A one-screen iOS app where small groups of friends (2–10, same city) see each 
 
 - Tap any point of interest on the map and rate it 1–5 stars with an optional short comment.
 - See friends as avatar markers that move in near real time.
-- Every user has a display name and an avatar: a preset or an uploaded photo.
+- Every user has a display name and an avatar: a DiceBear character they build (style, hair, face, outfit and colours).
+- Anyone can add photos of a place or its menu.
 - Sharing is under the user's control: friends only, with a ghost-mode switch.
 
 ### Non-goals for v1
 
-Chat, stories, photos on places, discovery of strangers. Background location (sharing works only while the app is open). Android, iPad layouts, web client.
+Chat, stories, discovery of strangers. Background location (sharing works only while the app is open). Android, iPad layouts, web client.
 
 ## The screen
 
@@ -43,7 +44,7 @@ The map fills the display, small controls float above it, a bottom sheet carries
 | Browse | Peek, about 120 pt | Search field with a Places / People switch, and a row of friend avatars (tap one to center the map on that friend) |
 | Place selected | Medium | Name, category, average stars and count, your star control, comment field, friends' ratings first |
 | Place details | Large | Every rating, newest first, with report and block actions |
-| Profile | Medium | Display name, avatar (presets or photo upload), ghost mode, who you are sharing with |
+| Profile | Medium | Display name, avatar (edit the DiceBear character), ghost mode, who you are sharing with |
 
 A rating saves the moment a star is tapped; the comment saves when its field loses focus.
 
@@ -60,9 +61,9 @@ Live location is the riskiest feature; defaults are conservative and the user ca
 
 - **Location:** When In Use only. Show an explanation screen before the system prompt. Purpose string: "Your location is shown to friends you accept, while the app is open." Stop sending and close the socket when the app leaves the foreground. No location history; logs must never contain coordinates.
 - **Who sees what:** only accepted friends see live position; a request needs acceptance. Ghost mode removes you from every friend's map immediately. A block removes both people from each other's map, friend list and rating details. Friends are found by username search only (never email or Apple ID; 3+ characters; skips blocked users).
-- **User-generated content** (ratings, comments, avatars) needs, for App Review: terms of use accepted at sign-up; a report action on every user, rating and avatar; a block action on every user; a way to act on reports quickly (check the `reports` table daily); a support contact address.
+- **User-generated content** (ratings, comments, place photos) needs, for App Review: terms of use accepted at sign-up; a report action on every user, rating and photo; a block action on every user; a way to act on reports quickly (check the `reports` table daily); a support contact address.
 - **Account and data:** in-app account deletion (`DELETE /me`). Honest privacy labels: precise location linked to the user and used for app functionality, plus user content and identifiers. Publish a privacy policy URL before TestFlight external testing.
-- **Avatar photos:** JPEG/PNG up to 5 MB, real file type checked on the server, EXIF stripped (it can carry GPS), only the resized thumbnail is served.
+- **Place photos:** JPEG/PNG up to 10 MB, real file type checked on the server, EXIF stripped (it can carry GPS), only re-encoded copies are served. Avatars are drawn characters, so no personal photos are stored.
 - **Apple also expects** the Sign in with Apple token to be revoked on account deletion; this backend does not do that yet (see `operations.md`, "Known gaps").
 
 ## Build order
@@ -74,10 +75,10 @@ Backend first, then the client against a mocked socket, then the two joined.
 | 1 | API skeleton: NestJS, docker-compose, `/health`, Sign in with Apple, `GET /me` | Valid Apple token returns your profile; CI runs lint and tests | **Done** (CI not set up) |
 | 2 | Places and ratings: resolve, bbox query, idempotent rating PUT with aggregates | Two users rate one place, average correct, bbox returns it | **Done** |
 | 3 | Friends and moderation: search, requests, accept, remove, blocks, reports, deletion | Blocked user cannot be found nor see the other's rating details/friend status | **Done** |
-| 4 | Avatars: presets, presigned upload, file checks, EXIF stripping, 256 px thumbnail | JPEG with GPS comes back with none; a non-image is rejected | **Done** |
+| 4 | Avatars and photos: DiceBear character validation; place and menu photos with presigned upload, file checks, EXIF stripping, thumbnails | JPEG with GPS comes back with none; a non-image is rejected; an unknown character option is rejected | **Done** (reworked 2026-11-11 from preset and photo avatars) |
 | 5 | Live gateway: WS auth, hello, loc fan-out, 60 s TTL, ghost, gone | Friend receives `loc`; `gone` on ghost and on disconnect | **Done** |
 | 6 | iOS map shell: map, location permission, own avatar, bottom sheet, mock friends | Runs on a real device with fake friends moving | To do |
-| 7 | iOS + API joined: sign-in, places in view, rating sheet, profile with preset/photo avatar, people search and friend requests | A rating made on the phone appears on a second device; a request by username can be accepted there | To do |
+| 7 | iOS + API joined: sign-in, places in view, rating sheet, character screen and profile, people search and friend requests | A rating made on the phone appears on a second device; a request by username can be accepted there | To do |
 | 8 | iOS live friends: LiveSocket, avatar markers, ghost toggle, dim and remove on stale | Two phones see each other move; sharing stops when backgrounded | To do |
 | 9 | Polish: report/block UI, empty and error states, README with demo recording, TestFlight build | A friend installs from TestFlight and completes the two-phone check unaided | To do |
 
@@ -87,7 +88,7 @@ Backend first, then the client against a mocked socket, then the two joined.
 | --- | --- | --- |
 | 1 | Who sees live location | Friends only |
 | 2 | How friends are added | Search by username |
-| 3 | Avatars | Presets and photo upload, both in v1 |
+| 3 | Avatars | DiceBear characters only (changed 2026-11-11 from presets plus photo upload); photo uploads are for places and menus |
 | 4 | Whose ratings the map shows | Everyone's average |
 | 5 | Place source | Apple points of interest only (**assumed default**, not confirmed) |
 | 6 | Minimum iOS | iOS 18 (**assumed default**) |

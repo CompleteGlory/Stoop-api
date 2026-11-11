@@ -1,7 +1,5 @@
 import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn } from 'typeorm';
 
-export type AvatarKind = 'preset' | 'upload';
-
 @Entity('users')
 export class User {
   @PrimaryGeneratedColumn('uuid')
@@ -18,12 +16,13 @@ export class User {
   @Column({ name: 'display_name', type: 'text', default: '' })
   displayName: string;
 
-  @Column({ name: 'avatar_kind', type: 'text', default: 'preset' })
-  avatarKind: AvatarKind;
+  /** DiceBear style of the person's character. Null until they pick one. */
+  @Column({ name: 'avatar_style', type: 'text', nullable: true })
+  avatarStyle: string | null;
 
-  /** A preset id for `preset`, an object key in the bucket for `upload`. */
-  @Column({ name: 'avatar_value', type: 'text', default: 'fox' })
-  avatarValue: string;
+  /** The chosen DiceBear options, checked by `validateCharacter`. */
+  @Column({ name: 'avatar_options', type: 'jsonb', nullable: true })
+  avatarOptions: Record<string, string> | null;
 
   @Column({ name: 'ghost_mode', type: 'boolean', default: false })
   ghostMode: boolean;

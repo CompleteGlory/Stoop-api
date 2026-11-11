@@ -16,7 +16,7 @@ const defaults: Record<string, string> = {
   S3_SECRET_ACCESS_KEY: 'test',
   S3_FORCE_PATH_STYLE: 'true',
   S3_AUTO_CREATE_BUCKET: 'true',
-  AVATAR_PUBLIC_BASE_URL: 'http://localhost:3000',
+  PUBLIC_BASE_URL: 'http://localhost:3000',
 };
 for (const [key, value] of Object.entries(defaults)) {
   process.env[key] ??= value;

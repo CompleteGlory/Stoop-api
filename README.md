@@ -1,8 +1,8 @@
 # Place Rating API
 
-Backend for a one-screen iOS app where people rate places on a map, each person has an avatar, and friends see each other's live location (Snapchat-map style). It follows the design spec: friends-only live location, preset avatars plus photo upload, everyone's average ratings.
+Backend for a one-screen iOS app where people rate places on a map, each person has a DiceBear character as their avatar, and friends see each other's live location (Snapchat-map style). It follows the design spec: friends-only live location, DiceBear character avatars, photos of places and menus, everyone's average ratings.
 
-**Stack:** NestJS 12 (ESM) · TypeORM 1.x on Postgres 16 + PostGIS · Redis (live locations, rate limits) · `ws` WebSocket · S3-compatible private bucket for avatar photos (served through the API) · Sign in with Apple · Vitest.
+**Stack:** NestJS 12 (ESM) · TypeORM 1.x on Postgres 16 + PostGIS · Redis (live locations, rate limits) · `ws` WebSocket · S3-compatible private bucket for place photos (served through the API) · Sign in with Apple · Vitest.
 
 **Live:** `https://place-rating-api-production.up.railway.app` (health check at `/health`), hosted on Railway. **Building the iOS app?** Start with [`CLAUDE.md`](CLAUDE.md) and the [`docs/`](docs) folder.
 
@@ -10,7 +10,7 @@ Backend for a one-screen iOS app where people rate places on a map, each person 
 
 ### System overview
 
-The phone talks to the API over HTTPS and one WebSocket. Postgres keeps everything durable, Redis keeps everything short-lived, and the bucket keeps avatar photos. Only the WebSocket path carries live location, and it ends in Redis.
+The phone talks to the API over HTTPS and one WebSocket. Postgres keeps everything durable, Redis keeps everything short-lived, and the bucket keeps place photos. Only the WebSocket path carries live location, and it ends in Redis.
 
 ```mermaid
 flowchart LR
@@ -28,13 +28,13 @@ flowchart LR
         direction TB
         subgraph api["NestJS API: one process, one instance"]
             direction TB
-            rest["REST controllers<br/>auth, me, users, places, ratings,<br/>friends, blocks, reports, avatars"]
+            rest["REST controllers<br/>auth, me, users, places, ratings,<br/>friends, blocks, reports, photos"]
             gw["Live gateway<br/>ws /live"]
             bus(["DomainEvents<br/>in-process bus"])
         end
         pg[("Postgres + PostGIS<br/>durable data")]
         redis[("Redis<br/>live positions, rate limits,<br/>revoked tokens")]
-        bucket[("Private bucket<br/>avatar photos")]
+        bucket[("Private bucket<br/>place photos")]
     end
 
     loc --> ui
@@ -68,7 +68,7 @@ flowchart TB
     subgraph feature["Feature modules"]
         direction TB
         auth["auth<br/>Apple token check, JWT access tokens,<br/>rotating refresh tokens"]
-        users["users<br/>profile, username search, avatars"]
+        users["users<br/>profile, username search, characters"]
         places["places + ratings<br/>bbox query, find-or-create,<br/>idempotent rating upsert"]
         social["social<br/>friends, blocks, SocialGraph"]
         moderation["moderation<br/>reports"]
@@ -105,14 +105,16 @@ erDiagram
     USERS ||--o{ BLOCKS : "is blocked"
     USERS ||--o{ REFRESH_TOKENS : owns
     USERS |o--o{ REPORTS : files
+    USERS ||--o{ PLACE_PHOTOS : adds
+    PLACES ||--o{ PLACE_PHOTOS : has
 
     USERS {
         uuid id PK
         text apple_sub UK "null after account deletion"
         text username UK "3-20 of a-z 0-9 _ ."
         text display_name
-        text avatar_kind "preset or upload"
-        text avatar_value "preset id or object key"
+        text avatar_style "DiceBear style, null until chosen"
+        jsonb avatar_options "the chosen DiceBear options"
         boolean ghost_mode
         timestamptz created_at
         timestamptz deleted_at "soft delete"
@@ -144,10 +146,20 @@ erDiagram
         uuid blocker_id PK, FK
         uuid blocked_id PK, FK
     }
+    PLACE_PHOTOS {
+        uuid id PK
+        uuid place_id FK
+        uuid user_id FK
+        text kind "place or menu"
+        text object_key UK "photos/{placeId}/{id}.jpg"
+        text thumb_key UK "photos/{placeId}/{id}-t.jpg"
+        int width
+        int height
+    }
     REPORTS {
         uuid id PK
         uuid reporter_id FK
-        text target_type "user, rating or avatar"
+        text target_type "user, rating or photo"
         uuid target_id
         text reason
         text status "open, actioned or dismissed"
@@ -166,13 +178,13 @@ erDiagram
 
 | Data | Where | How long |
 | --- | --- | --- |
-| Accounts, places, ratings, friendships, blocks, reports, refresh-token hashes | Postgres + PostGIS | Until deleted (account deletion anonymises the user and removes their ratings, friendships, blocks, sessions and photo) |
+| Accounts, places, ratings, friendships, blocks, reports, refresh-token hashes | Postgres + PostGIS | Until deleted (account deletion anonymises the user and removes their ratings, friendships, blocks, sessions and place photos) |
 | A person's latest live position | Redis `loc:{userId}` | 60 s after the last update; deleted on disconnect or ghost mode; never in Postgres, no history |
 | Rate-limit counters | Redis `rl:...` | One minute, hour or day window |
 | "This user was deleted" marker for access tokens | Redis `revoked:user:{userId}` | Access-token lifetime + 60 s |
-| Avatar photos | Private bucket `avatars/{userId}/{uuid}.jpg` (256 px JPEG, no EXIF), served through `GET /avatars/...` | Until replaced or the account is deleted |
-| Raw avatar uploads | Private bucket `uploads/{userId}/{uuid}` | Until confirmed or rejected (abandoned ones are not cleaned up yet) |
-| Preset avatars | Shipped inside the iOS app; the API stores only the preset id | n/a |
+| Place and menu photos | Private bucket `photos/{placeId}/{id}.jpg` (at most 1600 px) and `{id}-t.jpg` (400 px thumbnail), JPEG without EXIF, served through `GET /photos/...` | Until the person who added it deletes it or their account |
+| Raw photo uploads | Private bucket `uploads/{userId}/{uuid}` | Until confirmed or rejected (abandoned ones are not cleaned up yet) |
+| Avatars | DiceBear characters drawn by the app; the API stores only the style and options | Until changed or the account is deleted |
 
 ## Data flows
 
@@ -231,7 +243,7 @@ sequenceDiagram
 
 Sending the same `PUT` twice leaves the same state, so a retry after a dropped connection is always safe.
 
-### 3. Avatar photo
+### 3. Place or menu photo
 
 The photo goes from the phone straight to the bucket; the API only signs the upload and then checks and rewrites the file. The bucket is private, so the API also serves the finished picture.
 
@@ -242,17 +254,17 @@ sequenceDiagram
     participant API as NestJS API
     participant B as Private bucket
 
-    App->>API: POST /me/avatar/upload-url with contentType and contentLength
+    App->>API: POST /places/{id}/photos/upload-url with contentType and contentLength
     API->>B: Presign a PUT (type and size are signed, valid 5 minutes)
     API-->>App: key, uploadUrl, headers
     App->>B: PUT the photo bytes straight to uploadUrl
-    App->>API: POST /me/avatar/confirm with key
+    App->>API: POST /places/{id}/photos with kind (place or menu) and key
     API->>B: Read the upload
-    API->>API: Check it is a real JPEG or PNG, rotate, crop to 256 x 256, re-encode as JPEG (EXIF and GPS gone)
-    API->>B: Write avatars/{userId}/{uuid}.jpg
-    API->>B: Delete the raw upload and the previous photo
-    API-->>App: user whose avatar.url is the API address plus /avatars/{userId}/{uuid}.jpg
-    App->>API: GET /avatars/{userId}/{uuid}.jpg (no token needed)
+    API->>API: Check it is a real JPEG or PNG, rotate, fit in 1600 px and cut a 400 px thumbnail, re-encode as JPEG (EXIF and GPS gone)
+    API->>B: Write photos/{placeId}/{id}.jpg and {id}-t.jpg
+    API->>B: Delete the raw upload
+    API-->>App: the photo with url and thumbnailUrl (API address plus /photos/...)
+    App->>API: GET /photos/{placeId}/{id}-t.jpg (no token needed)
     API->>B: Read the processed photo
     API-->>App: image/jpeg, cacheable forever
 ```
@@ -311,7 +323,7 @@ sequenceDiagram
 ## Run it locally
 
 ```bash
-docker compose up -d            # Postgres + PostGIS, Redis, a fake S3 (moto) for avatars
+docker compose up -d            # Postgres + PostGIS, Redis, a fake S3 (moto) for place photos
 cp .env.example .env
 npm install
 npm run start:dev               # http://localhost:3000, migrations run on startup
@@ -349,7 +361,7 @@ npm run lint
 
 `test:e2e` uses the services from `docker compose up -d` (it creates a separate `placerating_test` database and uses Redis database 1). Point it elsewhere with `DATABASE_URL`, `REDIS_URL`, `S3_*` environment variables.
 
-The fake S3 keeps files in memory, so avatars you upload during development disappear when you restart that container (`docker compose restart s3`); the database rows then point at pictures that no longer exist. Re-upload or pick a preset.
+The fake S3 keeps files in memory, so photos you upload during development disappear when you restart that container (`docker compose restart s3`); the database rows then point at pictures that no longer exist. Upload them again.
 
 ## REST API
 
@@ -361,10 +373,8 @@ All routes except `/auth/*` and `/health` need `Authorization: Bearer <accessTok
 | `POST /auth/refresh` `{refreshToken}` | Rotates the refresh token. Reusing an old one more than 30 s later revokes the whole session family |
 | `POST /auth/logout` `{refreshToken}` | Revokes that session |
 | `POST /auth/dev` `{username}` | Development-only sign-in (see above) |
-| `GET /me`, `PATCH /me` `{username?, displayName?, ghostMode?, avatarPreset?}` | Profile. `username` is 3-20 chars of `a-z 0-9 _ .`, unique, lowercased |
+| `GET /me`, `PATCH /me` `{username?, displayName?, ghostMode?, avatar?}` | Profile. `username` is 3-20 chars of `a-z 0-9 _ .`, unique, lowercased. `avatar` is a DiceBear character `{style, options}`, checked against that style's options |
 | `DELETE /me` | Deletes the account: ratings, friendships, blocks and sessions go; the row is anonymised; friends are told the marker is gone |
-| `POST /me/avatar/upload-url` `{contentType, contentLength}` | Presigned S3 `PUT` URL for a JPEG/PNG up to 5 MB |
-| `POST /me/avatar/confirm` `{key}` | Re-encodes the upload to a 256 px JPEG (strips EXIF), swaps the avatar, deletes the old object |
 | `GET /users/search?q=` | Username prefix search, 3+ chars, max 20, excludes you and blocked people, shows `friendStatus` |
 | `GET /users/availability?username=` | Whether a username can be saved, with the reason if not. Works before onboarding |
 | `GET /places?bbox=minLng,minLat,maxLng,maxLat` | Places in the box (max 200, box at most 5 degrees wide) |
@@ -377,11 +387,15 @@ All routes except `/auth/*` and `/health` need `Authorization: Bearer <accessTok
 | `POST /friends/requests/:id/accept` | Accept an incoming request |
 | `DELETE /friends/:userId` | Remove a friend, cancel or decline a request |
 | `GET /blocks`, `POST /blocks` `{userId}`, `DELETE /blocks/:userId` | Blocking also removes any friendship |
-| `POST /reports` `{targetType: user\|rating\|avatar, targetId, reason, details?}` | Report content (App Review UGC requirement) |
-| `GET /avatars/:userId/:file.jpg` | Public, no token: streams a processed avatar photo from the bucket with `Cache-Control: immutable`. This is the `avatar.url` the other routes return |
+| `POST /places/:id/photos/upload-url` `{contentType, contentLength}` | Presigned S3 `PUT` URL for a JPEG/PNG up to 10 MB |
+| `POST /places/:id/photos` `{kind: place\|menu, key}` | Re-encodes the upload (1600 px max plus a 400 px thumbnail, EXIF stripped) and adds it to the place |
+| `GET /places/:id/photos?kind&limit&cursor` | Photos newest first, without blocked people's |
+| `DELETE /places/:id/photos/:photoId` | Removes your own photo and its files |
+| `POST /reports` `{targetType: user\|rating\|photo, targetId, reason, details?}` | Report content (App Review UGC requirement) |
+| `GET /photos/:placeId/:file.jpg` | Public, no token: streams a processed photo or thumbnail from the bucket with `Cache-Control: immutable`. These are the `url` and `thumbnailUrl` the photo routes return |
 | `GET /health` | 200 only when Postgres and Redis answer |
 
-Rate limits (per person, in Redis): 30 rating writes/hour, 20 friend requests/day, 60 username searches/hour, 10 avatar uploads/hour, 20 reports/day, 120 place lookups/hour; 30 sign-in calls/minute per IP.
+Rate limits (per person, in Redis): 30 rating writes/hour, 20 friend requests/day, 60 username searches/hour, 30 photo uploads/hour, 60 new photos/day, 300 username checks/hour, 20 reports/day, 120 place lookups/hour; 30 sign-in calls/minute per IP.
 
 ## Live location: `ws://host/live`
 
@@ -412,7 +426,7 @@ Suggested client behaviour (from the spec): send at most one `loc` per 3 s and s
 | **API** | this repo (GitHub deploy) | the variables below |
 | **PostGIS** | Railway's "PostGIS" template (`postgis/postgis`) | the plain Postgres template has no PostGIS and the first migration needs it |
 | **Redis** | Railway's Redis | |
-| **Bucket** | Railway Storage Bucket | private; the API serves avatars itself |
+| **Bucket** | Railway Storage Bucket | private; the API serves place photos itself |
 
 Variables on the API service (`${{Name.VAR}}` are Railway references to the other services; use their actual names):
 
@@ -428,7 +442,7 @@ S3_BUCKET=${{Bucket.BUCKET}}
 S3_ACCESS_KEY_ID=${{Bucket.ACCESS_KEY_ID}}
 S3_SECRET_ACCESS_KEY=${{Bucket.SECRET_ACCESS_KEY}}
 S3_FORCE_PATH_STYLE=false                    # true only if the bucket's Credentials tab says path-style
-AVATAR_PUBLIC_BASE_URL=https://${{RAILWAY_PUBLIC_DOMAIN}}
+AVATAR_PUBLIC_BASE_URL=https://${{RAILWAY_PUBLIC_DOMAIN}}   # read as PUBLIC_BASE_URL, the new name
 ```
 
 Do not set `DEV_AUTH_ENABLED` or `S3_AUTO_CREATE_BUCKET` there (the server refuses to start in production with the first one on). Then generate a public domain for the API service. Migrations run on startup. Because nobody can sign in without Apple in production, the API stays empty until the iOS app sends real Sign in with Apple tokens; change `APPLE_BUNDLE_ID` to the real bundle id before then.
@@ -440,13 +454,14 @@ src/
   config/       typed, validated environment
   db/           entities, the initial SQL migration (runs on startup), database module
   auth/         Apple token verification, access/refresh tokens, global auth guard
-  users/        profile, search, avatar presets and photo upload (S3)
+  users/        profile, search, DiceBear character validation
+  photos/       place and menu photos (presigned S3 upload, re-encoding, serving)
   places/       bbox query, find-or-create       ratings/   idempotent rating upsert + aggregates
   social/       friends, blocks, "who can see whom"
   moderation/   reports
   live/         WebSocket gateway, Redis presence, wire protocol
   common/       error envelope, rate limiter, pagination, shared mappers
-test/           end-to-end specs (REST, avatars, live socket)
+test/           end-to-end specs (REST, place photos, live socket)
 scripts/        smoke.mjs, a black-box check of a running server
 docs/           API contract, live protocol, data model, product spec, iOS app brief, operations
 CLAUDE.md       context for Claude Code sessions (start here when building the iOS app)
@@ -465,7 +480,7 @@ Verified in the sandbox where this was written: build, lint, 54 unit tests and 4
 - **Apple account deletion:** App Review expects you to also revoke the person's Sign in with Apple token when they delete their account (Apple's `/auth/revoke` endpoint, which needs a client secret generated from your Apple developer key). Not implemented here; deletion removes everything on our side only.
 - **One instance only for live location:** pushes to friends happen in memory of the process that holds the socket. With several instances, friends on another instance would not get updates. Fix by publishing frames through Redis pub/sub (positions are already in Redis, so `hello` works everywhere).
 - **PostGIS is required.** The first migration runs `CREATE EXTENSION postgis`; use the `postgis/postgis` image or a host whose Postgres offers the extension.
-- **Avatars go through the API:** the bucket stays private (Railway buckets cannot be public). Photos live under `avatars/<userId>/<id>.jpg` and `GET /avatars/...` streams them; `AVATAR_PUBLIC_BASE_URL` is this API's own public address. Each photo is fetched once per device because responses are cacheable forever, but if avatar traffic ever gets large, put a CDN in front of that route. Unconfirmed uploads under `uploads/` are never cleaned up automatically; add a lifecycle rule that expires them after a day on a bucket that supports it (Railway's does not yet).
+- **Photos go through the API:** the bucket stays private (Railway buckets cannot be public). Photos live under `photos/<placeId>/<id>.jpg` and `GET /photos/...` streams them; `PUBLIC_BASE_URL` (old name `AVATAR_PUBLIC_BASE_URL`, still read) is this API's own public address. Each photo is fetched once per device because responses are cacheable forever, but if photo traffic ever gets large, put a CDN in front of that route. Unconfirmed uploads under `uploads/` are never cleaned up automatically; add a lifecycle rule that expires them after a day on a bucket that supports it (Railway's does not yet).
 - **Moderation:** reports are stored (`reports.status = 'open'`) but there is no admin tool yet; review them in SQL until there is.
 - **Logs:** the WebSocket adapter logs an error for every oversized frame, so a logged-in client could spam your logs; add log sampling or a rate limit at the proxy if that matters.
-- **Production env:** set `NODE_ENV=production`, a real `JWT_SECRET` (`openssl rand -base64 48`), `APPLE_BUNDLE_ID`, `DATABASE_SSL` if your host needs TLS, and the `S3_*` / `AVATAR_PUBLIC_BASE_URL` values. Start with `npm run build && npm run start:prod`.
+- **Production env:** set `NODE_ENV=production`, a real `JWT_SECRET` (`openssl rand -base64 48`), `APPLE_BUNDLE_ID`, `DATABASE_SSL` if your host needs TLS, and the `S3_*` / `PUBLIC_BASE_URL` values. Start with `npm run build && npm run start:prod`.

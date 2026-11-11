@@ -1,6 +1,6 @@
 import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn } from 'typeorm';
 
-export type ReportTargetType = 'user' | 'rating' | 'avatar';
+export type ReportTargetType = 'user' | 'rating' | 'photo';
 export type ReportReason = 'spam' | 'abuse' | 'inappropriate' | 'impersonation' | 'other';
 
 @Entity('reports')
@@ -15,7 +15,7 @@ export class Report {
   @Column({ name: 'target_type', type: 'text' })
   targetType: ReportTargetType;
 
-  /** A user id for `user` and `avatar`, a rating id for `rating`. */
+  /** A user id for `user`, a rating id for `rating`, a photo id for `photo`. */
   @Column({ name: 'target_id', type: 'uuid' })
   targetId: string;
 

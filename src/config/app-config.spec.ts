@@ -8,7 +8,7 @@ const valid = {
   S3_BUCKET: 'bucket',
   S3_ACCESS_KEY_ID: 'key',
   S3_SECRET_ACCESS_KEY: 'secret',
-  AVATAR_PUBLIC_BASE_URL: 'https://cdn.example.com/bucket/',
+  PUBLIC_BASE_URL: 'https://cdn.example.com/bucket/',
 };
 
 describe('loadConfig', () => {
@@ -31,7 +31,7 @@ describe('loadConfig', () => {
     } catch (err) {
       message = (err as Error).message;
     }
-    for (const name of ['DATABASE_URL', 'REDIS_URL', 'JWT_SECRET', 'APPLE_BUNDLE_ID', 'S3_BUCKET', 'AVATAR_PUBLIC_BASE_URL']) {
+    for (const name of ['DATABASE_URL', 'REDIS_URL', 'JWT_SECRET', 'APPLE_BUNDLE_ID', 'S3_BUCKET', 'PUBLIC_BASE_URL']) {
       expect(message).toContain(`${name} is required`);
     }
   });
@@ -63,6 +63,13 @@ describe('loadConfig', () => {
     expect(() => loadConfig({ ...valid, PORT: 'abc' })).toThrow(/PORT/);
     expect(() => loadConfig({ ...valid, LIVE_PING_INTERVAL_MS: '0' })).toThrow(/LIVE_/);
     expect(loadConfig({ ...valid, LIVE_MIN_LOC_INTERVAL_MS: '0' }).live.minLocIntervalMs).toBe(0);
+  });
+
+  it('still reads the old AVATAR_PUBLIC_BASE_URL name', () => {
+    const { PUBLIC_BASE_URL: _omit, ...old } = valid;
+    expect(loadConfig({ ...old, AVATAR_PUBLIC_BASE_URL: 'https://api.example.com/' }).s3.publicBaseUrl).toBe(
+      'https://api.example.com',
+    );
   });
 
   it('only needs the Apple bundle id when the dev sign-in is off', () => {

@@ -41,13 +41,13 @@ Run `npm test && npm run test:e2e && npm run lint` before pushing a backend chan
 
 ## Architecture in one minute
 
-One NestJS 12 process serves REST and a `ws` WebSocket at `/live`. Postgres+PostGIS holds durable data (users, places, ratings, friendships, blocks, reports, refresh tokens). Redis holds the live position of each user (`loc:{userId}`, 60 s TTL), rate-limit counters and revoked-token markers. A private S3-compatible bucket holds avatar photos, which the API serves itself at `GET /avatars/...`. REST changes that affect the live graph (friend accepted, block, ghost, deletion) reach the socket side through the in-process `DomainEvents` bus. Diagrams are in `README.md`.
+One NestJS 12 process serves REST and a `ws` WebSocket at `/live`. Postgres+PostGIS holds durable data (users, places, ratings, friendships, blocks, reports, refresh tokens). Redis holds the live position of each user (`loc:{userId}`, 60 s TTL), rate-limit counters and revoked-token markers. A private S3-compatible bucket holds place and menu photos, which the API serves itself at `GET /photos/...`. REST changes that affect the live graph (friend accepted, block, ghost, deletion) reach the socket side through the in-process `DomainEvents` bus. Diagrams are in `README.md`.
 
 ```text
 src/
   config/ db/ redis/ common/   typed env, entities + migration, Redis client, errors/limiter/pagination/events
   auth/ users/ places/ ratings/ social/ moderation/ live/ health/
-test/                          e2e specs (REST, avatars, live sockets); src/**/*.spec.ts are unit tests
+test/                          e2e specs (REST, place photos, live sockets); src/**/*.spec.ts are unit tests
 scripts/smoke.mjs              black-box smoke test
 docs/                          the docs above
 ```
@@ -60,9 +60,9 @@ docs/                          the docs above
 4. A rating write locks the place row, upserts the rating and recomputes the place average in one transaction. `PUT /places/:id/rating` stays idempotent.
 5. Clients can create places but never change or delete them.
 6. `DEV_AUTH_ENABLED` must never be on in production (the config refuses to boot). No secrets in git; `.env` is ignored.
-7. The bucket stays private. Photos are re-encoded to a 256 px JPEG (EXIF stripped) before they are served.
+7. The bucket stays private. Place photos are re-encoded (at most 1600 px, plus a 400 px thumbnail, EXIF stripped) before they are served. Avatars are DiceBear characters: the app draws them, the server only stores and validates `{style, options}` against the pinned DiceBear version (9.4.2, same as the app).
 8. One live connection per user, and one API instance (live fan-out is in memory).
-9. Account deletion anonymises the user row and removes ratings, friendships, blocks, sessions and the photo, then recomputes averages.
+9. Account deletion anonymises the user row and removes ratings, friendships, blocks, sessions and their place photos (rows and files), then recomputes averages.
 10. A username is mandatory: without one, only `/me` and `/users/availability` work (`403 username_required`) and `/live` refuses the upgrade. A username can change but never be cleared.
 
 ## Backend conventions
@@ -85,4 +85,4 @@ Magd is an experienced Flutter/NestJS developer new to native iOS. Explain Swift
 
 ## Known gaps
 
-No Apple token revocation on account deletion, no CI, no admin UI for reports, single API instance only, unconfirmed avatar uploads are never cleaned up. Details in `docs/operations.md`.
+No Apple token revocation on account deletion, no CI, no admin UI for reports, single API instance only, unconfirmed photo uploads are never cleaned up. Details in `docs/operations.md`.

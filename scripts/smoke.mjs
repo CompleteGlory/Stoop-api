@@ -9,7 +9,8 @@
  * It creates its own throw-away people (usernames start with "s<random>_") and places ("Smoke <random> ...")
  * and removes them again at the end, so it can be run as often as you like. A full run takes about
  * two minutes, most of it waiting out the server's 2 s limit on location updates and the ping timeout.
- * Options: --skip-slow   skip the dead-connection (ping timeout) check, which alone takes ~45 s.
+ * Options: --skip-slow   skip the slow checks: the dead-connection (ping timeout) check, ~45 s, and
+ *                         the refresh-token grace window, ~31 s.
  * The result is printed and also written to scripts/smoke-report.txt.
  */
 import { createHmac, randomBytes } from 'node:crypto';
@@ -348,7 +349,7 @@ async function authAndProfile() {
     same(first.body.expiresIn, 900, 'expiresIn');
     same(first.body.user.username, nm('newbie'), 'username');
     same(first.body.user.ghostMode, false, 'ghostMode');
-    same(first.body.user.avatar.kind, 'preset', 'avatar kind');
+    same(first.body.user.avatar, null, 'no character yet');
     people.push({ id: first.body.user.id, name: 'newbie', username: nm('newbie'), token: first.body.accessToken });
     const again = status(await post('/auth/dev', undefined, { username: nm('newbie') }), 200);
     same(again.body.user.id, first.body.user.id, 'same person');
@@ -392,20 +393,34 @@ async function authAndProfile() {
     same(status(await patch('/me', alice.token, { ghostMode: false }), 200).body.ghostMode, false, 'ghost off');
     failsWith(await patch('/me', alice.token, { ghostMode: 'yes' }), 400, 'validation_failed');
   });
-  await test('preset avatars: known -> 200, unknown -> 400', async () => {
+  await test('DiceBear characters: real options -> 200, anything else -> 400 invalid_avatar', async () => {
     const alice = await signIn('alice');
-    const ok1 = status(await patch('/me', alice.token, { avatarPreset: 'owl' }), 200);
-    same(ok1.body.avatar, { kind: 'preset', value: 'owl', url: null }, 'avatar');
-    failsWith(await patch('/me', alice.token, { avatarPreset: 'dragon' }), 400, 'validation_failed');
+    const character = { style: 'avataaars', options: { top: 'shortFlat', hairColor: '111111', facialHair: 'none' } };
+    same(status(await patch('/me', alice.token, { avatar: character }), 200).body.avatar, character, 'avatar');
+    failsWith(await patch('/me', alice.token, { avatar: { style: 'identicon', options: {} } }), 400, 'invalid_avatar', 'not a character style');
+    failsWith(await patch('/me', alice.token, { avatar: { style: 'avataaars', options: { top: 'dragonHair' } } }), 400, 'invalid_avatar', 'unknown value');
+    failsWith(await patch('/me', alice.token, { avatar: { style: 'avataaars', options: { wings: 'big' } } }), 400, 'invalid_avatar', 'unknown option');
+    failsWith(await patch('/me', alice.token, { avatarPreset: 'owl' }), 400, 'validation_failed', 'old preset field');
   });
-  await test('refresh tokens rotate; replaying an old one revokes the whole session family', async () => {
+  await test('refresh tokens rotate; a retry within 30 s (lost response) still works', async () => {
     const alice = await signIn('alice');
     const first = status(await post('/auth/refresh', undefined, { refreshToken: alice.refresh }), 200);
     ok(first.body.refreshToken !== alice.refresh, 'refresh token was not rotated');
     status(await get('/me', first.body.accessToken), 200, 'new access token works');
-    failsWith(await post('/auth/refresh', undefined, { refreshToken: alice.refresh }), 401, undefined, 'replay of old token');
-    failsWith(await post('/auth/refresh', undefined, { refreshToken: first.body.refreshToken }), 401, undefined, 'family revoked');
+    const retry = status(await post('/auth/refresh', undefined, { refreshToken: alice.refresh }), 200, 'retry within the grace window');
+    status(await post('/auth/refresh', undefined, { refreshToken: retry.body.refreshToken }), 200, 'newest token keeps working');
   });
+  if (SKIP_SLOW) {
+    out('  - skipped: replaying a refresh token after the 30 s grace window revokes the session (--skip-slow)');
+  } else {
+    await test('replaying an old refresh token after the 30 s grace window revokes the whole session family', async () => {
+      const alice = await signIn('alice');
+      const next = status(await post('/auth/refresh', undefined, { refreshToken: alice.refresh }), 200);
+      await new Promise((resolve) => setTimeout(resolve, 31_000));
+      failsWith(await post('/auth/refresh', undefined, { refreshToken: alice.refresh }), 401, undefined, 'replay of old token');
+      failsWith(await post('/auth/refresh', undefined, { refreshToken: next.body.refreshToken }), 401, undefined, 'family revoked');
+    });
+  }
   await test('refresh with an unknown token -> 401, with a malformed one -> 400', async () => {
     failsWith(await post('/auth/refresh', undefined, { refreshToken: randomBytes(32).toString('base64url') }), 401, undefined);
     failsWith(await post('/auth/refresh', undefined, { refreshToken: 'short' }), 400, 'validation_failed');
@@ -597,7 +612,7 @@ async function social() {
     const res = status(await get('/users/search', alice.token, { q: nm('ali') }), 200);
     same(res.body.items.map((u) => u.username), [nm('alicia')], 'matches (alice herself excluded)');
     same(res.body.items[0].friendStatus, 'none', 'friendStatus');
-    same(res.body.items[0].avatar.kind, 'preset', 'avatar');
+    ok('avatar' in res.body.items[0], 'avatar field');
 
     failsWith(await get('/users/search', alice.token, { q: 'al' }), 400, 'validation_failed', 'two characters');
     failsWith(await get('/users/search', alice.token), 400, 'validation_failed', 'no q');
@@ -697,7 +712,7 @@ async function social() {
 async function reports() {
   section('Reports');
 
-  await test('reports about users, avatars and ratings are stored as open', async () => {
+  await test('reports about users and ratings are stored as open', async () => {
     const alice = await signIn('alice');
     const bob = await signIn('bobby');
     const placeId = await placeFor(bob, 'report');
@@ -705,7 +720,7 @@ async function reports() {
 
     const user = status(await post('/reports', alice.token, { targetType: 'user', targetId: bob.id, reason: 'abuse', details: 'harassing me' }), 201);
     same(user.body.status, 'open', 'status');
-    status(await post('/reports', alice.token, { targetType: 'avatar', targetId: bob.id, reason: 'inappropriate' }), 201, 'avatar report');
+    failsWith(await post('/reports', alice.token, { targetType: 'avatar', targetId: bob.id, reason: 'inappropriate' }), 400, 'validation_failed', 'avatar reports are gone');
     status(await post('/reports', alice.token, { targetType: 'rating', targetId: rated.body.rating.id, reason: 'spam' }), 201, 'rating report');
   });
   await test('reports about yourself, your own rating, an unknown rating or with bad fields are refused', async () => {
@@ -730,15 +745,15 @@ async function reports() {
   });
 }
 
-async function avatars() {
-  section('Avatar photos (presigned S3 upload)');
+async function photos() {
+  section('Place photos (presigned S3 upload)');
 
-  const photo = async (width, height, format = 'jpeg') => {
+  const picture = async (width, height, format = 'jpeg') => {
     const image = sharp({ create: { width, height, channels: 3, background: { r: 200, g: 40, b: 90 } } });
     return format === 'jpeg' ? image.jpeg().withExif({ IFD0: { Make: 'SecretCam' } }).toBuffer() : image.png().toBuffer();
   };
-  const upload = async (user, bytes, contentType = 'image/jpeg') => {
-    const presign = status(await post('/me/avatar/upload-url', user.token, { contentType, contentLength: bytes.length }), 200, 'upload-url');
+  const upload = async (user, placeId, bytes, contentType = 'image/jpeg') => {
+    const presign = status(await post(`/places/${placeId}/photos/upload-url`, user.token, { contentType, contentLength: bytes.length }), 200, 'upload-url');
     const stored = await fetch(presign.body.uploadUrl, {
       method: presign.body.method,
       headers: presign.body.headers,
@@ -753,58 +768,52 @@ async function avatars() {
     return res.status === 404 || res.status === 403;
   };
 
-  await test('upload -> confirm re-encodes to a 256 px JPEG without metadata, served from a public URL', async () => {
+  await test('upload -> create re-encodes to at most 1600 px plus a 400 px thumbnail, without metadata', async () => {
     const alice = await signIn('alice');
-    const original = await photo(800, 600);
+    const placeId = await placeFor(alice, 'photos');
+    const original = await picture(2400, 1200);
     ok((await sharp(original).metadata()).exif !== undefined, 'test photo should carry EXIF');
 
-    const key = await upload(alice, original);
+    const key = await upload(alice, placeId, original);
     ok(key.startsWith(`uploads/${alice.id}/`), `unexpected key ${key}`);
-    const me = status(await post('/me/avatar/confirm', alice.token, { key }), 200, 'confirm');
-    same(me.body.avatar.kind, 'upload', 'avatar kind');
-    ok(new RegExp(`^avatars/${alice.id}/[0-9a-f-]+\\.jpg$`).test(me.body.avatar.value), `unexpected avatar key ${me.body.avatar.value}`);
+    const photo = status(await post(`/places/${placeId}/photos`, alice.token, { kind: 'menu', key }), 201, 'create').body;
+    same([photo.kind, photo.width, photo.height], ['menu', 1600, 800], 'kind and size');
 
-    const served = await fetch(me.body.avatar.url, { signal: AbortSignal.timeout(10_000) });
-    same(served.status, 200, 'GET avatar url');
+    const served = await fetch(photo.url, { signal: AbortSignal.timeout(10_000) });
+    same(served.status, 200, 'GET photo url');
     same(served.headers.get('content-type'), 'image/jpeg', 'content-type');
     const meta = await sharp(Buffer.from(await served.arrayBuffer())).metadata();
-    same([meta.format, meta.width, meta.height], ['jpeg', 256, 256], 'format and size');
+    same([meta.format, meta.width, meta.height], ['jpeg', 1600, 800], 'format and size');
     ok(meta.exif === undefined, 'EXIF metadata survived the re-encode');
+    const thumb = await sharp(Buffer.from(await (await fetch(photo.thumbnailUrl)).arrayBuffer())).metadata();
+    same([thumb.width, thumb.height], [400, 400], 'thumbnail size');
 
-    failsWith(await post('/me/avatar/confirm', alice.token, { key }), 404, 'not_found', 'confirming the same upload again');
+    failsWith(await post(`/places/${placeId}/photos`, alice.token, { kind: 'menu', key }), 404, 'not_found', 'creating from the same upload again');
   });
-  await test('a new photo, or a preset, replaces and deletes the old photo', async () => {
-    const alice = await signIn('alice');
-    const first = status(await post('/me/avatar/confirm', alice.token, { key: await upload(alice, await photo(300, 300)) }), 200).body.avatar;
-    const second = status(await post('/me/avatar/confirm', alice.token, { key: await upload(alice, await photo(400, 300, 'png'), 'image/png') }), 200).body.avatar;
-    ok(first.url !== second.url, 'a new photo must have a new URL');
-    ok(await gone(first.url), 'old photo should be deleted after a new one is confirmed');
-    same((await fetch(second.url)).status, 200, 'new photo is served');
-
-    same(status(await patch('/me', alice.token, { avatarPreset: 'panda' }), 200).body.avatar.kind, 'preset', 'preset chosen');
-    ok(await gone(second.url), 'photo should be deleted when a preset is chosen');
-  });
-  await test('not a picture -> 422 invalid_image; someone else’s upload -> 400 invalid_key; missing upload -> 404', async () => {
+  await test('listing by kind, delete by the owner only, files removed', async () => {
     const alice = await signIn('alice');
     const bob = await signIn('bobby');
-    const notAnImage = await upload(alice, Buffer.from('definitely not a jpeg, just some text'));
-    failsWith(await post('/me/avatar/confirm', alice.token, { key: notAnImage }), 422, 'invalid_image');
-    const bobsKey = await upload(bob, await photo(100, 100));
-    failsWith(await post('/me/avatar/confirm', alice.token, { key: bobsKey }), 400, 'invalid_key');
-    failsWith(await post('/me/avatar/confirm', alice.token, { key: `uploads/${alice.id}/does-not-exist` }), 404, 'not_found');
-    failsWith(await post('/me/avatar/confirm', alice.token, { key: 'short' }), 400, 'validation_failed');
+    const placeId = await placeFor(alice, 'photos2');
+    const menu = status(await post(`/places/${placeId}/photos`, bob.token, { kind: 'menu', key: await upload(bob, placeId, await picture(300, 300, 'png'), 'image/png') }), 201).body;
+    status(await post(`/places/${placeId}/photos`, bob.token, { kind: 'place', key: await upload(bob, placeId, await picture(300, 200)) }), 201);
+
+    same(status(await get(`/places/${placeId}/photos`, alice.token, { kind: 'menu' }), 200).body.items.map((p) => p.id), [menu.id], 'menu photos');
+    failsWith(await del(`/places/${placeId}/photos/${menu.id}`, alice.token), 404, 'not_found', 'someone else’s photo');
+    status(await del(`/places/${placeId}/photos/${menu.id}`, bob.token), 204, 'own photo');
+    ok(await gone(menu.url), 'deleted photo should no longer be served');
   });
-  await test('upload-url refuses GIFs, files over 5 MB, empty files and missing tokens', async () => {
+  await test('not a picture -> 422 invalid_image; someone else’s upload -> 400 invalid_key; bad requests -> 400', async () => {
     const alice = await signIn('alice');
-    failsWith(await post('/me/avatar/upload-url', alice.token, { contentType: 'image/gif', contentLength: 10 }), 400, 'validation_failed', 'gif');
-    failsWith(await post('/me/avatar/upload-url', alice.token, { contentType: 'image/jpeg', contentLength: 6 * 1024 * 1024 }), 400, 'validation_failed', '6 MB');
-    failsWith(await post('/me/avatar/upload-url', alice.token, { contentType: 'image/jpeg', contentLength: 0 }), 400, 'validation_failed', 'empty');
-    failsWith(await post('/me/avatar/upload-url', undefined, { contentType: 'image/jpeg', contentLength: 10 }), 401, 'unauthorized', 'no token');
-  });
-  await test('uploads are limited to 10 per hour -> 429 rate_limited', async () => {
-    const alice = await signIn('alice');
-    for (let i = 0; i < 10; i++) status(await post('/me/avatar/upload-url', alice.token, { contentType: 'image/jpeg', contentLength: 100 }), 200, `upload-url ${i + 1}`);
-    failsWith(await post('/me/avatar/upload-url', alice.token, { contentType: 'image/jpeg', contentLength: 100 }), 429, 'rate_limited', 'upload-url 11');
+    const bob = await signIn('bobby');
+    const placeId = await placeFor(alice, 'photos3');
+    const notAnImage = await upload(alice, placeId, Buffer.from('definitely not a jpeg, just some text'));
+    failsWith(await post(`/places/${placeId}/photos`, alice.token, { kind: 'place', key: notAnImage }), 422, 'invalid_image');
+    const bobsKey = await upload(bob, placeId, await picture(100, 100));
+    failsWith(await post(`/places/${placeId}/photos`, alice.token, { kind: 'place', key: bobsKey }), 400, 'invalid_key');
+    failsWith(await post(`/places/${placeId}/photos`, alice.token, { kind: 'selfie', key: bobsKey }), 400, 'validation_failed', 'unknown kind');
+    failsWith(await post(`/places/${placeId}/photos/upload-url`, alice.token, { contentType: 'image/gif', contentLength: 10 }), 400, 'validation_failed', 'gif');
+    failsWith(await post(`/places/${placeId}/photos/upload-url`, alice.token, { contentType: 'image/jpeg', contentLength: 11 * 1024 * 1024 }), 400, 'validation_failed', '11 MB');
+    failsWith(await post(`/places/${placeId}/photos/upload-url`, undefined, { contentType: 'image/jpeg', contentLength: 10 }), 401, 'unauthorized', 'no token');
   });
 }
 
@@ -1171,7 +1180,7 @@ await places();
 await ratings();
 await social();
 await reports();
-await avatars();
+await photos();
 await deletion();
 await live();
 await cleanUp();

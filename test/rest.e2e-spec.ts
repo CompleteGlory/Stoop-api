@@ -53,7 +53,8 @@ describe('REST API (real Postgres + PostGIS and Redis)', () => {
         .expect(200);
       expect(res.body.needsOnboarding).toBe(true);
       expect(res.body.user).toMatchObject({ username: null, displayName: 'Nia Newcomer', ghostMode: false });
-      expect(res.body.user.avatar).toEqual({ kind: 'preset', value: 'fox', url: null });
+      // no character yet: the app asks for one after the username
+      expect(res.body.user.avatar).toBeNull();
       expect(res.body.expiresIn).toBe(900);
 
       // signing in again finds the same account
@@ -128,11 +129,25 @@ describe('REST API (real Postgres + PostGIS and Redis)', () => {
       expect(me.body.username).toBe('alice');
     });
 
-    it('switches to a preset avatar and rejects unknown ones', async () => {
+    it('saves a DiceBear character and rejects options the style does not have', async () => {
       const alice = await signUp(app, 'alice');
-      const ok = await api().patch('/me').set(alice.auth).send({ avatarPreset: 'owl' }).expect(200);
-      expect(ok.body.avatar).toEqual({ kind: 'preset', value: 'owl', url: null });
-      await api().patch('/me').set(alice.auth).send({ avatarPreset: 'dragon' }).expect(400);
+      const character = { style: 'avataaars', options: { top: 'shortFlat', hairColor: '111111', facialHair: 'none' } };
+      const ok = await api().patch('/me').set(alice.auth).send({ avatar: character }).expect(200);
+      expect(ok.body.avatar).toEqual(character);
+      expect((await api().get('/me').set(alice.auth).expect(200)).body.avatar).toEqual(character);
+
+      for (const avatar of [
+        { style: 'identicon', options: {} },
+        { style: 'avataaars', options: { top: 'dragonHair' } },
+        { style: 'avataaars', options: { wings: 'big' } },
+      ]) {
+        const bad = await api().patch('/me').set(alice.auth).send({ avatar }).expect(400);
+        expect(bad.body.error.code).toBe('invalid_avatar');
+      }
+      const notAnObject = await api().patch('/me').set(alice.auth).send({ avatar: 'fox' }).expect(400);
+      expect(notAnObject.body.error.code).toBe('validation_failed');
+      // the old preset field is gone
+      await api().patch('/me').set(alice.auth).send({ avatarPreset: 'owl' }).expect(400);
     });
 
     it('rotates refresh tokens and revokes the family when an old one is replayed', async () => {
@@ -424,7 +439,7 @@ describe('REST API (real Postgres + PostGIS and Redis)', () => {
 
       const res = await api().get('/users/search').query({ q: 'ali' }).set(alice.auth).expect(200);
       expect(res.body.items.map((u: any) => u.username)).toEqual(['alicia']);
-      expect(res.body.items[0]).toMatchObject({ friendStatus: 'none', avatar: { kind: 'preset' } });
+      expect(res.body.items[0]).toMatchObject({ friendStatus: 'none', avatar: null });
 
       await api().get('/users/search').query({ q: 'al' }).set(alice.auth).expect(400);
       await api().get('/users/search').set(alice.auth).expect(400);
@@ -533,7 +548,7 @@ describe('REST API (real Postgres + PostGIS and Redis)', () => {
   });
 
   describe('reports', () => {
-    it('accepts reports about users, avatars and ratings', async () => {
+    it('accepts reports about users and ratings', async () => {
       const alice = await signUp(app, 'alice');
       const bob = await signUp(app, 'bobby');
       const place = await api()
@@ -549,7 +564,8 @@ describe('REST API (real Postgres + PostGIS and Redis)', () => {
         .send({ targetType: 'user', targetId: bob.id, reason: 'abuse', details: 'harassing me' })
         .expect(201);
       expect(user.body.status).toBe('open');
-      await api().post('/reports').set(alice.auth).send({ targetType: 'avatar', targetId: bob.id, reason: 'inappropriate' }).expect(201);
+      // avatars are drawn from fixed options now, so there is nothing to report separately
+      await api().post('/reports').set(alice.auth).send({ targetType: 'avatar', targetId: bob.id, reason: 'inappropriate' }).expect(400);
       await api().post('/reports').set(alice.auth).send({ targetType: 'rating', targetId: rated.body.rating.id, reason: 'spam' }).expect(201);
 
       await api().post('/reports').set(alice.auth).send({ targetType: 'user', targetId: alice.id, reason: 'spam' }).expect(400);

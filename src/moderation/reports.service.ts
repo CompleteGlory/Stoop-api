@@ -23,6 +23,12 @@ export class ReportsService {
       if (rating[0].user_id === reporterId) {
         throw ApiError.badRequest('invalid_target', 'You cannot report your own rating');
       }
+    } else if (dto.targetType === 'photo') {
+      const photo = await this.db.query(`SELECT user_id FROM place_photos WHERE id = $1`, [dto.targetId]);
+      if (photo.length === 0) throw ApiError.notFound('Photo');
+      if (photo[0].user_id === reporterId) {
+        throw ApiError.badRequest('invalid_target', 'You cannot report your own photo');
+      }
     } else {
       if (dto.targetId === reporterId) {
         throw ApiError.badRequest('invalid_target', 'You cannot report yourself');
