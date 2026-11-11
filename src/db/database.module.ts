@@ -9,6 +9,7 @@ import { User } from './entities/user.entity.js';
 import { InitSchema1700000000000 } from './migrations/1700000000000-init-schema.js';
 import { CharactersAndPlacePhotos1794400000000 } from './migrations/1794400000000-characters-and-place-photos.js';
 import { EmailAndGoogleSignIn1794500000000 } from './migrations/1794500000000-email-and-google-sign-in.js';
+import { UsernameAtEmailSignUp1794600000000 } from './migrations/1794600000000-username-at-email-sign-up.js';
 
 export const ENTITIES = [User, RefreshToken, Friendship, Block, Report];
 
@@ -22,7 +23,12 @@ export const ENTITIES = [User, RefreshToken, Friendship, Block, Report];
         ssl: config.databaseSsl ? { rejectUnauthorized: false } : false,
         entities: ENTITIES,
         // Migrations are imported, not globbed: that works the same under tsc, vitest and ESM.
-        migrations: [InitSchema1700000000000, CharactersAndPlacePhotos1794400000000, EmailAndGoogleSignIn1794500000000],
+        migrations: [
+          InitSchema1700000000000,
+          CharactersAndPlacePhotos1794400000000,
+          EmailAndGoogleSignIn1794500000000,
+          UsernameAtEmailSignUp1794600000000,
+        ],
         migrationsRun: true,
         synchronize: false,
         logging: ['error' as const],

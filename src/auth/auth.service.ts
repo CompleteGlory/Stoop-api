@@ -119,20 +119,32 @@ export class AuthService {
     if (!this.config.email.enabled) throw ApiError.notFound('Route');
   }
 
-  /** Always the same answer, so nobody can find out which addresses have accounts. */
-  async emailSignUp(email: string, password: string): Promise<void> {
+  /**
+   * Always the same answer for the address, so nobody can find out which addresses have accounts.
+   * A chosen username is checked first (that says nothing about the address) and kept until the code
+   * is entered; it is only a reservation in spirit, so someone else can still take it meanwhile.
+   */
+  async emailSignUp(email: string, password: string, username?: string): Promise<void> {
     this.assertEmailEnabled();
+    if (username) {
+      const status = await this.usersService.usernameStatus(username);
+      if (status.reason === 'taken') throw ApiError.conflict('username_taken', 'That username is already taken');
+      if (status.reason === 'reserved') throw ApiError.unprocessable('username_reserved', 'That username is not available');
+    }
     await this.limiter.consume(`email-send:${email}`, 5, 3600, 'emails to this address');
-    const code = await this.codes.issue(email, 'verify', await hashPassword(password));
+    const code = await this.codes.issue(email, 'verify', {
+      passwordHash: await hashPassword(password),
+      username: username ?? null,
+    });
     await this.sendCode(email, code, 'verify');
   }
 
   async emailResend(email: string): Promise<void> {
     this.assertEmailEnabled();
     await this.limiter.consume(`email-send:${email}`, 5, 3600, 'emails to this address');
-    const passwordHash = await this.codes.pendingPassword(email);
-    if (!passwordHash) return;
-    const code = await this.codes.issue(email, 'verify', passwordHash);
+    const pending = await this.codes.pending(email);
+    if (!pending) return;
+    const code = await this.codes.issue(email, 'verify', pending);
     await this.sendCode(email, code, 'verify');
   }
 
@@ -140,13 +152,15 @@ export class AuthService {
   async emailVerify(email: string, code: string): Promise<AuthResponse> {
     this.assertEmailEnabled();
     await this.limiter.consume(`email-code:${email}`, 10, 900, 'code attempts');
-    const { passwordHash } = await this.codes.consume(email, 'verify', code);
+    const { passwordHash, username } = await this.codes.consume(email, 'verify', code);
     let user = await this.users.findOne({ where: { email, deletedAt: IsNull() } });
     if (user) {
       await this.users.update({ id: user.id }, { passwordHash, emailVerifiedAt: user.emailVerifiedAt ?? new Date() });
     } else {
       user = await this.users.save(this.users.create({ email, emailVerifiedAt: new Date(), passwordHash }));
     }
+    // an existing account keeps its username; a taken name leaves the person on the username step
+    if (username && !user.username) await this.usersService.claimUsername(user.id, username);
     return this.respond(user);
   }
 
@@ -158,8 +172,8 @@ export class AuthService {
     if (!user?.passwordHash) {
       // take as long as a real check, so timing does not reveal which addresses exist
       await verifyPassword(password, await DUMMY_HASH_PROMISE);
-      const pending = await this.codes.pendingPassword(email);
-      if (pending && (await verifyPassword(password, pending))) {
+      const pending = await this.codes.pending(email);
+      if (pending?.passwordHash && (await verifyPassword(password, pending.passwordHash))) {
         throw ApiError.forbidden('email_not_verified', 'Confirm your email with the code we sent');
       }
     }

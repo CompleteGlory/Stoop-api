@@ -207,8 +207,17 @@ describe('REST API (real Postgres + PostGIS and Redis)', () => {
       expect(res.body).toEqual({ available: true, reason: null });
     });
 
-    it('requires a token and a username parameter to check availability', async () => {
-      await api().get('/users/availability').query({ username: 'alice' }).expect(401);
+    it('checks availability without a token too, for the sign-up screen', async () => {
+      await signUp(app, 'alice');
+      const taken = await api().get('/users/availability').query({ username: 'alice' }).expect(200);
+      expect(taken.body).toEqual({ available: false, reason: 'taken' });
+      const free = await api().get('/users/availability').query({ username: 'newbie' }).expect(200);
+      expect(free.body).toEqual({ available: true, reason: null });
+      // a bad token is ignored rather than refused
+      await api().get('/users/availability').query({ username: 'newbie' }).set({ Authorization: 'Bearer nope' }).expect(200);
+    });
+
+    it('requires a username parameter to check availability', async () => {
       const alice = await signUp(app, 'alice');
       const res = await api().get('/users/availability').set(alice.auth).expect(400);
       expect(res.body.error.code).toBe('validation_failed');

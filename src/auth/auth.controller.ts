@@ -8,6 +8,7 @@ import {
   EmailCodeDto,
   EmailDto,
   EmailPasswordDto,
+  EmailSignUpDto,
   GoogleSignInDto,
   PasswordResetDto,
   RefreshDto,
@@ -41,9 +42,9 @@ export class AuthController {
   /** Sends a 6-digit code. `202` whether or not the address has an account. */
   @Post('email/signup')
   @HttpCode(202)
-  async emailSignUp(@Body() dto: EmailPasswordDto, @Req() req: Request) {
+  async emailSignUp(@Body() dto: EmailSignUpDto, @Req() req: Request) {
     await this.limiter.consume(`auth:${req.ip}`, 30, 60, 'sign-in attempts');
-    await this.auth.emailSignUp(dto.email, dto.password);
+    await this.auth.emailSignUp(dto.email, dto.password, dto.username);
   }
 
   @Post('email/resend')

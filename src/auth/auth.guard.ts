@@ -16,11 +16,15 @@ export class AuthGuard implements CanActivate {
   async canActivate(context: ExecutionContext): Promise<boolean> {
     if (context.getType() !== 'http') return true;
     const targets = [context.getHandler(), context.getClass()];
-    if (this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, targets)) return true;
-
     const req = context.switchToHttp().getRequest();
     const header: string | undefined = req.headers?.authorization;
     const match = header?.match(/^Bearer\s+(.+)$/i);
+
+    if (this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, targets)) {
+      // public routes may still use the caller when a valid token comes along; a bad one is ignored
+      if (match) req.user = await this.tokens.verifyAccessToken(match[1]).then((id) => ({ id }), () => undefined);
+      return true;
+    }
     if (!match) throw ApiError.unauthorized();
 
     const userId = await this.tokens.verifyAccessToken(match[1]);

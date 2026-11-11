@@ -143,15 +143,44 @@ export class UsersService {
     this.events.emit({ type: 'user-deleted', userId: id, friendIds });
   }
 
-  /** Whether `username` could be saved by the caller right now. Saving can still lose a race. */
-  async checkUsername(callerId: string, username: string): Promise<UsernameAvailabilityResultDto> {
-    await this.limiter.consume(`username-check:${callerId}`, 300, 3600, 'username checks');
+  /**
+   * Whether `username` could be saved by the caller right now. Saving can still lose a race.
+   * Works signed out too (the email sign-up screen), limited per IP address instead of per account.
+   */
+  async checkUsername(caller: { userId?: string; ip?: string }, username: string): Promise<UsernameAvailabilityResultDto> {
+    if (caller.userId) {
+      await this.limiter.consume(`username-check:${caller.userId}`, 300, 3600, 'username checks');
+    } else {
+      await this.limiter.consume(`username-check-ip:${caller.ip ?? 'unknown'}`, 120, 3600, 'username checks');
+    }
+    return this.usernameStatus(username, caller.userId);
+  }
 
+  /** The availability answer without rate limiting; `callerId`'s own username counts as available. */
+  async usernameStatus(username: string, callerId?: string): Promise<UsernameAvailabilityResultDto> {
     if (!USERNAME_PATTERN.test(username)) return { available: false, reason: 'invalid' };
     if (RESERVED_USERNAMES.has(username)) return { available: false, reason: 'reserved' };
     const owner = await this.users.findOne({ where: { username }, select: { id: true } });
     if (owner && owner.id !== callerId) return { available: false, reason: 'taken' };
     return { available: true, reason: null };
+  }
+
+  /**
+   * Gives an account without a username the one it chose at sign-up. Returns false, changing
+   * nothing, when the account already has one or someone else took the name in the meantime.
+   * A blank display name becomes the username, since friends' markers show the display name.
+   */
+  async claimUsername(userId: string, username: string): Promise<boolean> {
+    if ((await this.usernameStatus(username, userId)).available === false) return false;
+    try {
+      const result = await this.users.update({ id: userId, username: IsNull() }, { username });
+      if ((result.affected ?? 0) === 0) return false;
+      await this.users.update({ id: userId, displayName: '' }, { displayName: username });
+      return true;
+    } catch (err) {
+      if (isUniqueViolation(err, 'users_username_key')) return false;
+      throw err;
+    }
   }
 
   /** Prefix search on usernames, never returning the caller, blocked users or deleted accounts. */

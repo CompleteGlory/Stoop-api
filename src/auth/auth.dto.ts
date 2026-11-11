@@ -1,5 +1,6 @@
 import { Transform } from 'class-transformer';
 import { IsEmail, IsOptional, IsString, Length, Matches, MaxLength, MinLength } from 'class-validator';
+import { USERNAME_PATTERN } from '../users/users.dto.js';
 
 export class AppleSignInDto {
   @IsString()
@@ -54,6 +55,17 @@ export class EmailPasswordDto extends EmailDto {
   @IsString()
   @Length(8, 128, { message: 'password must be 8 to 128 characters' })
   password: string;
+}
+
+const lowerTrim = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim().toLowerCase() : value);
+
+export class EmailSignUpDto extends EmailPasswordDto {
+  /** Optional: the username picked on the sign-up screen, given to the account once the code is entered. */
+  @IsOptional()
+  @IsString()
+  @Transform(lowerTrim)
+  @Matches(USERNAME_PATTERN, { message: 'username must be 3-20 characters: letters, digits, "_" or "."' })
+  username?: string;
 }
 
 export class EmailCodeDto extends EmailDto {

@@ -48,6 +48,43 @@ describe('email, Google and linked sign-in', () => {
     expect(bad.body.error.code).toBe('invalid_credentials');
   });
 
+  it('gives the account the username chosen at sign-up, kept through a resend', async () => {
+    await api().post('/auth/email/signup').send({ email: 'c@example.com', password: 'password1', username: ' Cleo.R ' }).expect(202);
+    await api().post('/auth/email/resend').send({ email: 'c@example.com' }).expect(202);
+    const res = await api().post('/auth/email/verify').send({ email: 'c@example.com', code: mailbox.codeFor('c@example.com') }).expect(200);
+    expect(res.body.needsOnboarding).toBe(false);
+    expect(res.body.user.username).toBe('cleo.r');
+    expect(res.body.user.displayName).toBe('cleo.r');
+  });
+
+  it('refuses a taken, reserved or malformed username at sign-up, before sending anything', async () => {
+    const first = await signUpByEmail('d@example.com');
+    await api().patch('/me').set({ Authorization: `Bearer ${first.accessToken}` }).send({ username: 'dana' }).expect(200);
+    const taken = await api().post('/auth/email/signup').send({ email: 'e@example.com', password: 'password1', username: 'dana' }).expect(409);
+    expect(taken.body.error.code).toBe('username_taken');
+    const reserved = await api().post('/auth/email/signup').send({ email: 'e@example.com', password: 'password1', username: 'admin' }).expect(422);
+    expect(reserved.body.error.code).toBe('username_reserved');
+    await api().post('/auth/email/signup').send({ email: 'e@example.com', password: 'password1', username: 'a b' }).expect(400);
+    expect(mailbox.sent.filter((m) => m.to === 'e@example.com')).toHaveLength(0);
+  });
+
+  it('falls back to the username step when the name was taken before the code was entered', async () => {
+    await api().post('/auth/email/signup').send({ email: 'f@example.com', password: 'password1', username: 'fern' }).expect(202);
+    const other = await signUpByEmail('g@example.com');
+    await api().patch('/me').set({ Authorization: `Bearer ${other.accessToken}` }).send({ username: 'fern' }).expect(200);
+    const res = await api().post('/auth/email/verify').send({ email: 'f@example.com', code: mailbox.codeFor('f@example.com') }).expect(200);
+    expect(res.body.needsOnboarding).toBe(true);
+    expect(res.body.user.username).toBeNull();
+  });
+
+  it('keeps the existing username when the email already has an account', async () => {
+    const first = await signUpByEmail('h@example.com');
+    await api().patch('/me').set({ Authorization: `Bearer ${first.accessToken}` }).send({ username: 'hana' }).expect(200);
+    await api().post('/auth/email/signup').send({ email: 'h@example.com', password: 'password2', username: 'other.name' }).expect(202);
+    const res = await api().post('/auth/email/verify').send({ email: 'h@example.com', code: mailbox.codeFor('h@example.com') }).expect(200);
+    expect(res.body.user.username).toBe('hana');
+  });
+
   it('kills a code after 5 wrong tries, and resend issues a new one', async () => {
     await api().post('/auth/email/signup').send({ email: 'a@example.com', password: 'password1' }).expect(202);
     const right = mailbox.codeFor('a@example.com');

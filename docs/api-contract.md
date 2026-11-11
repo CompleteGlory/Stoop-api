@@ -71,7 +71,7 @@ Character styles (DiceBear 9.4.3, the same version in the app and the server): `
 | `POST /auth/refresh` `{refreshToken}` | `200 AuthResponse` with a **new** refresh token. The old one is dead after this call. Presenting an already-used refresh token revokes the whole session family (theft protection) and returns `401`, except within 30 seconds of its use: then the call succeeds and replaces the session's live token, so a client that lost the response can retry. Persist the new token before doing anything else, and never run two refreshes in parallel |
 | `POST /auth/logout` `{refreshToken}` | `204`. Revokes that session (also `204` when the token is unknown). The current access token stays valid until it expires |
 | `POST /auth/google` `{idToken}` | `200 AuthResponse`. The Google ID token from the iOS Google Sign-In SDK; its `aud` must be one of `GOOGLE_CLIENT_IDS`, otherwise `401`. `404` when `GOOGLE_CLIENT_IDS` is empty. Creates the account on first sign-in |
-| `POST /auth/email/signup` `{email, password}` | `202`, always (whether or not the address has an account). Emails a 6-digit code valid 15 minutes. `password` 8–128 chars; `email` is trimmed and lowercased. Nothing is created until the code is entered |
+| `POST /auth/email/signup` `{email, password, username?}` | `202`, always (whether or not the address has an account). Emails a 6-digit code valid 15 minutes. `password` 8–128 chars; `email` is trimmed and lowercased. Nothing is created until the code is entered. Optional `username` (same rules as `PATCH /me`) is checked first: `409 username_taken` or `422 username_reserved`, and then nothing is sent. It is kept with the pending sign-up (and through `resend`) and given to the account when the code is entered, unless the account already has a username or someone took the name meanwhile; then `needsOnboarding` is `true` and the app shows the username step |
 | `POST /auth/email/verify` `{email, code}` | `200 AuthResponse`. Confirms the address and signs in: creates the account, or adds the password to the account that already has this email. `400 invalid_code` |
 | `POST /auth/email/resend` `{email}` | `202`, always. A new code for a pending sign-up |
 | `POST /auth/email/signin` `{email, password}` | `200 AuthResponse`. `401 invalid_credentials`, or `403 email_not_verified` if the code was never entered |
@@ -96,7 +96,7 @@ Access tokens last 15 minutes (`expiresIn`), refresh tokens 30 days. Sign-in cal
 
 `GET /users/search?q=` → `200 { items: [PublicUser + { friendStatus }] }`. `q` is 3–20 chars, lowercased, prefix match on username. Max 20 results, ordered by username, never yourself, blocked people (either direction) or deleted accounts. `friendStatus` is `none | friends | request_sent | request_received`. 60 per hour.
 
-`GET /users/availability?username=` → `200 { available: boolean, reason: "taken" | "reserved" | "invalid" | null }`. For the username picker, so it works before the account has a username. `username` is 1–64 chars, trimmed and lowercased; a badly formed name answers `invalid` rather than an error. Your own current username counts as available. `PATCH /me` can still return `409 username_taken` if someone saves it first. 300 per hour.
+`GET /users/availability?username=` → `200 { available: boolean, reason: "taken" | "reserved" | "invalid" | null }`. For the username picker and the email sign-up screen, so it works before the account has a username and **without a token**. A valid token is optional (a bad one is ignored); with one, your own current username counts as available. `username` is 1–64 chars, trimmed and lowercased; a badly formed name answers `invalid` rather than an error. `PATCH /me` can still return `409 username_taken` if someone saves it first. 300 per hour.
 
 ## Places and ratings
 
@@ -156,7 +156,7 @@ Counted per signed-in user in Redis (fixed windows), except sign-in which is per
 | Rating writes (PUT + DELETE) | 30 / hour |
 | Friend requests | 20 / day |
 | Username searches | 60 / hour |
-| Username availability checks | 300 / hour |
+| Username availability checks | 300 / hour per account; 120 / hour per IP when signed out |
 | Photo upload URLs | 30 / hour |
 | New place photos | 60 / day |
 | Reports | 20 / day |

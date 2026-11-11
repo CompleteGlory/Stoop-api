@@ -10,35 +10,42 @@ const MAX_ATTEMPTS = 5;
 
 const hash = (code: string) => createHash('sha256').update(code).digest('hex');
 
+export interface PendingSignUp {
+  passwordHash: string | null;
+  username: string | null;
+}
+
 /**
  * Six-digit codes sent by email to confirm an address or reset a password. Only a hash is stored;
  * a code lasts 15 minutes and 5 wrong tries kill it. A new code replaces the previous one.
- * A pending sign-up keeps the chosen password's hash here until the address is confirmed.
+ * A pending sign-up keeps the chosen password's hash, and the username picked on the sign-up screen,
+ * here until the address is confirmed.
  */
 @Injectable()
 export class EmailCodesService {
   constructor(private readonly db: DataSource) {}
 
-  async issue(email: string, purpose: CodePurpose, passwordHash: string | null = null): Promise<string> {
+  async issue(email: string, purpose: CodePurpose, pending: PendingSignUp | null = null): Promise<string> {
     const code = randomInt(0, 1_000_000).toString().padStart(6, '0');
     await this.db.transaction(async (m) => {
       await m.query(`DELETE FROM email_codes WHERE email = $1 AND purpose = $2`, [email, purpose]);
       await m.query(
-        `INSERT INTO email_codes (email, purpose, code_hash, password_hash, expires_at)
-         VALUES ($1, $2, $3, $4, now() + make_interval(mins => $5))`,
-        [email, purpose, hash(code), passwordHash, TTL_MINUTES],
+        `INSERT INTO email_codes (email, purpose, code_hash, password_hash, username, expires_at)
+         VALUES ($1, $2, $3, $4, $5, now() + make_interval(mins => $6))`,
+        [email, purpose, hash(code), pending?.passwordHash ?? null, pending?.username ?? null, TTL_MINUTES],
       );
     });
     return code;
   }
 
-  /** The pending sign-up's password hash, if someone signed up with this email and has not confirmed yet. */
-  async pendingPassword(email: string): Promise<string | null> {
-    const rows: { password_hash: string | null }[] = await this.db.query(
-      `SELECT password_hash FROM email_codes WHERE email = $1 AND purpose = 'verify' AND expires_at > now()`,
+  /** The pending sign-up, if someone signed up with this email and has not confirmed yet. */
+  async pending(email: string): Promise<PendingSignUp | null> {
+    const rows: { password_hash: string | null; username: string | null }[] = await this.db.query(
+      `SELECT password_hash, username FROM email_codes WHERE email = $1 AND purpose = 'verify' AND expires_at > now()`,
       [email],
     );
-    return rows[0]?.password_hash ?? null;
+    const row = rows[0];
+    return row?.password_hash ? { passwordHash: row.password_hash, username: row.username } : null;
   }
 
   async exists(email: string, purpose: CodePurpose): Promise<boolean> {
@@ -50,11 +57,11 @@ export class EmailCodesService {
   }
 
   /** Uses up the code and returns what was stored with it, or throws `400 invalid_code`. */
-  async consume(email: string, purpose: CodePurpose, code: string): Promise<{ passwordHash: string | null }> {
+  async consume(email: string, purpose: CodePurpose, code: string): Promise<PendingSignUp> {
     const invalid = ApiError.badRequest('invalid_code', 'That code is wrong or has expired');
-    const rows: { id: string; code_hash: string; password_hash: string | null; attempts: number }[] =
+    const rows: { id: string; code_hash: string; password_hash: string | null; username: string | null; attempts: number }[] =
       await this.db.query(
-        `SELECT id, code_hash, password_hash, attempts FROM email_codes
+        `SELECT id, code_hash, password_hash, username, attempts FROM email_codes
           WHERE email = $1 AND purpose = $2 AND expires_at > now()`,
         [email, purpose],
       );
@@ -65,7 +72,7 @@ export class EmailCodesService {
       throw invalid;
     }
     await this.db.query(`DELETE FROM email_codes WHERE id = $1`, [row.id]);
-    return { passwordHash: row.password_hash };
+    return { passwordHash: row.password_hash, username: row.username };
   }
 
   async forget(email: string): Promise<void> {

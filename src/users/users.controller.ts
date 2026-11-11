@@ -1,5 +1,6 @@
-import { Controller, Get, Query } from '@nestjs/common';
-import { AllowWithoutUsername, CurrentUser, type AuthUser } from '../common/decorators.js';
+import { Controller, Get, Query, Req } from '@nestjs/common';
+import type { Request } from 'express';
+import { CurrentUser, Public, type AuthUser } from '../common/decorators.js';
 import { SearchUsersDto, UsernameAvailabilityDto } from './users.dto.js';
 import { UsersService } from './users.service.js';
 
@@ -12,10 +13,11 @@ export class UsersController {
     return { items: await this.users.search(user.id, query.q) };
   }
 
-  // used by the username picker, so it has to work before a username exists
-  @AllowWithoutUsername()
+  // used by the username picker and the email sign-up screen, so it works signed out too;
+  // a valid token, when sent, makes your own username count as available
+  @Public()
   @Get('availability')
-  availability(@CurrentUser() user: AuthUser, @Query() query: UsernameAvailabilityDto) {
-    return this.users.checkUsername(user.id, query.username);
+  availability(@CurrentUser() user: AuthUser | undefined, @Query() query: UsernameAvailabilityDto, @Req() req: Request) {
+    return this.users.checkUsername({ userId: user?.id, ip: req.ip }, query.username);
   }
 }
