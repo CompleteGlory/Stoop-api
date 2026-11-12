@@ -7,6 +7,7 @@ const defaults: Record<string, string> = {
   REDIS_URL: 'redis://localhost:6379/1',
   JWT_SECRET: 'test-secret-test-secret-test-secret-test-secret',
   APPLE_BUNDLE_ID: 'com.example.PlaceRating',
+  SUPPORT_EMAIL: 'support@example.test',
   DEV_AUTH_ENABLED: 'false',
   // the fake S3 from docker-compose.yml
   S3_ENDPOINT: 'http://localhost:9000',

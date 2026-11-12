@@ -22,6 +22,8 @@ export interface AppConfig {
     /** OAuth client ids whose Google ID tokens are accepted (the `aud` claim). Empty turns Google sign-in off. */
     clientIds: string[];
   };
+  /** Shown on the terms and privacy pages as the contact address (App Review wants one). */
+  supportEmail: string;
   email: {
     /** Email and password sign-up and sign-in. Off unless switched on. */
     enabled: boolean;
@@ -127,6 +129,7 @@ export function loadConfig(env: Env = process.env): AppConfig {
     google: {
       clientIds: (env.GOOGLE_CLIENT_IDS ?? '').split(',').map((id) => id.trim()).filter(Boolean),
     },
+    supportEmail: (env.SUPPORT_EMAIL || 'magddevf@gmail.com').trim(),
     email: {
       enabled: bool(env.EMAIL_AUTH_ENABLED, false),
       provider: env.MAIL_PROVIDER === 'resend' ? 'resend' : 'log',

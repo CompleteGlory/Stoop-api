@@ -397,6 +397,7 @@ All routes except `/auth/*` and `/health` need `Authorization: Bearer <accessTok
 | `POST /reports` `{targetType: user\|rating\|photo, targetId, reason, details?}` | Report content (App Review UGC requirement) |
 | `GET /photos/:placeId/:file.jpg` | Public, no token: streams a processed photo or thumbnail from the bucket with `Cache-Control: immutable`. These are the `url` and `thumbnailUrl` the photo routes return |
 | `GET /health` | 200 only when Postgres and Redis answer |
+| `GET /terms`, `GET /privacy` | The Terms of Use and Privacy Policy as HTML (English and Arabic), public; the contact address is `SUPPORT_EMAIL` |
 
 Rate limits (per person, in Redis): 30 rating writes/hour, 20 friend requests/day, 60 username searches/hour, 30 photo uploads/hour, 60 new photos/day, 300 username checks/hour, 20 reports/day, 120 place lookups/hour; 30 sign-in calls/minute per IP.
 

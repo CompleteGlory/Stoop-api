@@ -143,6 +143,10 @@ Friend changes and blocks take effect on a connected live socket immediately (pe
 
 `POST /reports` `{targetType: "user" | "rating" | "photo", targetId, reason: "spam" | "abuse" | "inappropriate" | "impersonation" | "other", details?: ≤500}` → `201 { id, status: "open" }`. For `user` the `targetId` is the user id, for `rating` the rating id, for `photo` the photo id. `400 invalid_target` (yourself, your own rating or your own photo), `404 not_found`. 20 per day. There is no admin UI yet: reports are read in SQL (see `operations.md`).
 
+## Legal pages
+
+`GET /terms` and `GET /privacy` → `200 text/html`, **public, no token**, cached for an hour. English first, Arabic below it (right to left). They are the Terms of Use and Privacy Policy links App Review asks for (the Privacy Policy URL in App Store Connect is `https://place-rating-api-production.up.railway.app/privacy`), and the contact address on them is `SUPPORT_EMAIL`. The text lives in `src/legal/legal.pages.ts`: it describes what the app really stores and shows, so change it in the same commit as any behaviour it describes (what is kept, for how long, who sees it).
+
 ## Health
 
 `GET /health` → `200 {"status":"ok","db":"up","redis":"up"}`; `503` when Postgres or Redis does not answer.
