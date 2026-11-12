@@ -8,6 +8,7 @@ import { DatabaseModule } from './db/database.module.js';
 import { AuthModule } from './auth/auth.module.js';
 import { HealthModule } from './health/health.module.js';
 import { LegalModule } from './legal/legal.module.js';
+import { ShareModule } from './share/share.module.js';
 import { LiveModule } from './live/live.module.js';
 import { ModerationModule } from './moderation/moderation.module.js';
 import { PhotosModule } from './photos/photos.module.js';
@@ -39,6 +40,7 @@ function flatten(errors: ValidationError[], prefix = ''): string[] {
     LiveModule,
     HealthModule,
     LegalModule,
+    ShareModule,
   ],
   providers: [
     { provide: APP_FILTER, useClass: ApiErrorFilter },

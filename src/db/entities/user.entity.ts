@@ -24,6 +24,10 @@ export class User {
   @Column({ name: 'password_hash', type: 'text', nullable: true })
   passwordHash: string | null;
 
+  /** Sign in with Apple refresh token, kept only to revoke it on deletion. Never selected by default, never returned. */
+  @Column({ name: 'apple_refresh_token', type: 'text', nullable: true, select: false })
+  appleRefreshToken?: string | null;
+
   /** Google's stable user id, when the account signs in with Google. */
   @Column({ name: 'google_sub', type: 'text', nullable: true, unique: true })
   googleSub: string | null;

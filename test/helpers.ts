@@ -5,6 +5,7 @@ import { DataSource } from 'typeorm';
 import { AppModule } from '../src/app.module.js';
 import { setupApp } from '../src/app.setup.js';
 import { AppleVerifier, type AppleIdentity } from '../src/auth/apple-verifier.js';
+import { AppleTokenClient } from '../src/auth/apple-tokens.js';
 import { GoogleVerifier, type GoogleIdentity } from '../src/auth/google-verifier.js';
 import { Mailer, type Email } from '../src/mail/mailer.js';
 import { ApiError } from '../src/common/api-error.js';
@@ -33,6 +34,23 @@ export class FakeGoogleVerifier extends GoogleVerifier {
   }
 }
 
+/** Swaps `code-<x>` for `refresh-<x>` and records what was revoked. `bad-code` fails. */
+export class FakeAppleTokenClient extends AppleTokenClient {
+  enabled = true;
+  readonly revoked: string[] = [];
+
+  async exchange(authorizationCode: string): Promise<string> {
+    if (authorizationCode === 'bad-code') throw new Error('Apple said no');
+    return authorizationCode.replace(/^code-/, 'refresh-');
+  }
+
+  async revoke(refreshToken: string): Promise<void> {
+    this.revoked.push(refreshToken);
+  }
+}
+
+export const appleTokens = new FakeAppleTokenClient();
+
 /** Keeps sent emails so tests can read the codes. */
 export class CapturingMailer extends Mailer {
   readonly sent: Email[] = [];
@@ -60,6 +78,8 @@ export async function createTestApp(): Promise<INestApplication> {
     .useClass(FakeGoogleVerifier)
     .overrideProvider(Mailer)
     .useValue(mailbox)
+    .overrideProvider(AppleTokenClient)
+    .useValue(appleTokens)
     .compile();
   const app = setupApp(moduleRef.createNestApplication());
   await app.init();

@@ -34,6 +34,11 @@ Checks after a deploy: `GET /health` → `{"status":"ok","db":"up","redis":"up"}
 
 `APPLE_BUNDLE_ID` must equal the iOS app's bundle id, or `POST /auth/apple` returns 401 for every real token.
 
+Apple settings beyond the bundle id:
+
+- `APPLE_TEAM_ID` (the 10-character team id, `W4D7HW9L4Y`) turns on universal links: the API serves `/.well-known/apple-app-site-association` so shared place links open in the app.
+- `APPLE_KEY_ID` and `APPLE_PRIVATE_KEY` turn on token revocation, which App Review expects. Create a key with Sign in with Apple enabled under Certificates, Identifiers & Profiles > Keys and paste the `.p8` contents (one line with `\n` works). With them, `POST /auth/apple` exchanges the app's `authorizationCode` for an Apple refresh token, and `DELETE /me` revokes it. Without them both steps are skipped. A failure is logged as a warning and never blocks sign-in or deletion. Accounts that signed in before the key was set have no stored token; they get one at their next sign-in.
+
 ## Local development
 
 ```bash
@@ -64,7 +69,6 @@ The moto container keeps files in memory: place photos vanish on `docker compose
 
 ## Known gaps
 
-- **Apple token revocation on account deletion** is not implemented. App Review expects the person's Sign in with Apple token to be revoked (Apple's `/auth/revoke`, which needs a client secret signed with your Apple developer key). Deleting an account only removes data on our side.
 - **Single instance only for live location.** Fan-out to friends' sockets happens in the process that holds them; with several instances, friends on another instance miss pushes. The fix is publishing frames through Redis pub/sub (positions are already in Redis, so `hello` would work everywhere).
 - **Unconfirmed uploads** under `uploads/` are never cleaned up (Railway buckets have no lifecycle rules). Add a scheduled cleanup before the app has many users.
 - **Photo traffic goes through the API.** Responses are cacheable forever, so each photo is fetched once per device; put a CDN in front of `GET /photos/...` if that ever matters.

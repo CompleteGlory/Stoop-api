@@ -7,7 +7,8 @@ A one-screen iOS MapKit app: friends see each other move on a map (Snapchat-map 
 ## Status
 
 - Backend: spec milestones 1–5 are done, tested and **deployed** at `https://place-rating-api-production.up.railway.app` (Railway project `wholesome-perfection`: services `place-rating-api`, `PostGIS`, `Redis`, bucket `shelved-wrap`). Every push to `main` redeploys.
-- iOS app (Stoop, repo `place-rating-ios`): sign-in, username, DiceBear character and the map shell with mock friends are built (milestone 6, simulator-checked; a real-device run is still owed). Milestones 7–9 to do. Start with `docs/ios-app-brief.md`.
+- iOS app (Stoop, repo `place-rating-ios`, GitHub `CompleteGlory/Stoop`): milestones 6–8 are built (sign-in, map, places and ratings, photos, friends, live socket, safety, settings). Milestone 9 has account deletion with Apple revocation, shared place links, a README with diagrams and a TestFlight workflow; still owed: README screenshots and a two-phone TestFlight check. Start with `docs/ios-app-brief.md`.
+- Shared place links (`/p/:id`) open the app only once `APPLE_TEAM_ID` is set on Railway; Apple revocation needs `APPLE_KEY_ID` and `APPLE_PRIVATE_KEY` there too.
 - Production has **no dev sign-in**. `APPLE_BUNDLE_ID` on Railway is the app's real bundle id, `com.magdzaky.PlaceRating`. For development run the backend locally (below).
 
 ## Docs: read before working on the matching area
@@ -54,7 +55,7 @@ docs/                          the docs above
 
 ## Rules that must not break
 
-1. Every error is `{ "error": { "code", "message" } }`; throw `ApiError.*`, keep codes stable and document new ones in `docs/api-contract.md`.
+1. Every error is `{ "error": { "code", "message" } }`; throw `ApiError.*`, keep codes stable and document new ones in `docs/api-contract.md`. The HTML pages people open in a browser (`/p/:id`, `/terms`, `/privacy`) are the only exception.
 2. Live location lives only in Redis with a 60 s expiry. Never write it to Postgres, never keep history, never log coordinates.
 3. Only accepted, non-blocked friends see each other, and only while the sender is not in ghost mode. Blocks hide both people everywhere.
 4. A rating write locks the place row, upserts the rating and recomputes the place average in one transaction. `PUT /places/:id/rating` stays idempotent.
@@ -86,4 +87,4 @@ Magd is an experienced Flutter/NestJS developer new to native iOS. Explain Swift
 
 ## Known gaps
 
-No Apple token revocation on account deletion, no CI, no admin UI for reports, single API instance only, unconfirmed photo uploads are never cleaned up. Details in `docs/operations.md`.
+Apple token revocation is off until `APPLE_KEY_ID`/`APPLE_PRIVATE_KEY` are set on Railway, no CI, no admin UI for reports, single API instance only, unconfirmed photo uploads are never cleaned up. Details in `docs/operations.md`.

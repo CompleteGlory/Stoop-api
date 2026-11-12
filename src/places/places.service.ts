@@ -114,6 +114,12 @@ export class PlacesService {
     return toPlaceDto(created[0]);
   }
 
+  /** A place for the public share page, or null when there is none. */
+  async find(placeId: string): Promise<PlaceDto | null> {
+    const rows = await this.db.query(`SELECT ${PLACE_COLUMNS} FROM places p WHERE p.id = $1`, [placeId]);
+    return rows[0] ? toPlaceDto(rows[0]) : null;
+  }
+
   async get(placeId: string, viewerId: string): Promise<PlaceDto & { myRating: MyRatingDto | null }> {
     const rows = await this.db.query(`SELECT ${PLACE_COLUMNS} FROM places p WHERE p.id = $1`, [placeId]);
     if (!rows[0]) throw ApiError.notFound('Place');

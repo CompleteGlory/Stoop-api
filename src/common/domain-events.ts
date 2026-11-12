@@ -6,7 +6,9 @@ export type DomainEvent =
   | { type: 'relations-changed'; userIds: string[] }
   | { type: 'ghost-changed'; userId: string; on: boolean }
   /** `friendIds` are the friends the user had before deletion, so they can be told the marker is gone. */
-  | { type: 'user-deleted'; userId: string; friendIds: string[] };
+  | { type: 'user-deleted'; userId: string; friendIds: string[] }
+  /** A deleted account had signed in with Apple: its Apple token should be revoked. */
+  | { type: 'apple-token-revoke'; refreshToken: string };
 
 /**
  * A tiny in-process event bus. It lets the REST side tell the live

@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { IsNull, Repository } from 'typeorm';
 import { ApiError } from '../common/api-error.js';
@@ -9,6 +9,7 @@ import { User } from '../db/entities/user.entity.js';
 import { Mailer } from '../mail/mailer.js';
 import { UsersService, type SelfUserDto } from '../users/users.service.js';
 import { AppleVerifier } from './apple-verifier.js';
+import { AppleTokenClient } from './apple-tokens.js';
 import { EmailCodesService } from './email-codes.service.js';
 import { GoogleVerifier } from './google-verifier.js';
 import { DUMMY_HASH_PROMISE, hashPassword, verifyPassword } from './passwords.js';
@@ -35,10 +36,13 @@ interface Identity {
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     @Inject(APP_CONFIG) private readonly config: AppConfig,
     @InjectRepository(User) private readonly users: Repository<User>,
     private readonly apple: AppleVerifier,
+    private readonly appleTokens: AppleTokenClient,
     private readonly google: GoogleVerifier,
     private readonly tokens: TokensService,
     private readonly usersService: UsersService,
@@ -49,7 +53,12 @@ export class AuthService {
 
   // MARK: Apple and Google
 
-  async signInWithApple(input: { identityToken: string; nonce?: string; fullName?: string }): Promise<AuthResponse> {
+  async signInWithApple(input: {
+    identityToken: string;
+    nonce?: string;
+    fullName?: string;
+    authorizationCode?: string;
+  }): Promise<AuthResponse> {
     const identity = await this.apple.verify(input.identityToken, input.nonce);
     const linkable = identity.email && identity.emailVerified && !identity.isPrivateEmail;
     const user = await this.findOrCreate({
@@ -58,7 +67,19 @@ export class AuthService {
       verifiedEmail: linkable ? identity.email : undefined,
       name: input.fullName ?? '',
     });
+    if (input.authorizationCode) await this.keepAppleToken(user.id, input.authorizationCode);
     return this.respond(user);
+  }
+
+  /** Best effort: a failure here must not stop the sign-in, it only means nothing to revoke later. */
+  private async keepAppleToken(userId: string, authorizationCode: string) {
+    if (!this.appleTokens.enabled) return;
+    try {
+      const refreshToken = await this.appleTokens.exchange(authorizationCode);
+      await this.users.update({ id: userId }, { appleRefreshToken: refreshToken });
+    } catch (err) {
+      this.logger.warn(`Could not exchange the Apple authorization code: ${err instanceof Error ? err.message : 'unknown error'}`);
+    }
   }
 
   async signInWithGoogle(idToken: string): Promise<AuthResponse> {

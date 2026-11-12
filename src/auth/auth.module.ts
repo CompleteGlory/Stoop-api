@@ -6,6 +6,7 @@ import { UsersModule } from '../users/users.module.js';
 import { APP_CONFIG, type AppConfig } from '../config/app-config.js';
 import { LogMailer, Mailer, ResendMailer } from '../mail/mailer.js';
 import { AppleVerifier, JoseAppleVerifier } from './apple-verifier.js';
+import { AppleRevoker, AppleTokenClient, HttpAppleTokenClient } from './apple-tokens.js';
 import { EmailCodesService } from './email-codes.service.js';
 import { GoogleVerifier, JoseGoogleVerifier } from './google-verifier.js';
 import { AuthController } from './auth.controller.js';
@@ -20,6 +21,8 @@ import { TokensModule } from './tokens.module.js';
     AuthService,
     EmailCodesService,
     { provide: AppleVerifier, useClass: JoseAppleVerifier },
+    { provide: AppleTokenClient, useClass: HttpAppleTokenClient },
+    AppleRevoker,
     { provide: GoogleVerifier, useClass: JoseGoogleVerifier },
     {
       provide: Mailer,

@@ -67,7 +67,7 @@ Character styles (DiceBear 9.4.3, the same version in the app and the server): `
 
 | Request | Response |
 | --- | --- |
-| `POST /auth/apple` `{identityToken, nonce?, fullName?}` | `200 AuthResponse`. Creates the account on first sign-in. `identityToken` 20–8192 chars; `nonce` is the **raw** nonce (the app sent its SHA-256 hex to Apple); `fullName` ≤ 60 chars, only available to the app on the very first Apple sign-in, so send it then. `needsOnboarding` is `true` until a username is set. Errors: `401 unauthorized` (token invalid, wrong audience = bundle id, nonce mismatch) |
+| `POST /auth/apple` `{identityToken, nonce?, fullName?, authorizationCode?}` | `200 AuthResponse`. Creates the account on first sign-in. `identityToken` 20–8192 chars; `authorizationCode` ≤ 2048, the credential's one-time code: the server exchanges it with Apple so it can revoke the sign-in when the account is deleted (skipped when no Apple key is configured; a failed exchange never fails the sign-in); `nonce` is the **raw** nonce (the app sent its SHA-256 hex to Apple); `fullName` ≤ 60 chars, only available to the app on the very first Apple sign-in, so send it then. `needsOnboarding` is `true` until a username is set. Errors: `401 unauthorized` (token invalid, wrong audience = bundle id, nonce mismatch) |
 | `POST /auth/refresh` `{refreshToken}` | `200 AuthResponse` with a **new** refresh token. The old one is dead after this call. Presenting an already-used refresh token revokes the whole session family (theft protection) and returns `401`, except within 30 seconds of its use: then the call succeeds and replaces the session's live token, so a client that lost the response can retry. Persist the new token before doing anything else, and never run two refreshes in parallel |
 | `POST /auth/logout` `{refreshToken}` | `204`. Revokes that session (also `204` when the token is unknown). The current access token stays valid until it expires |
 | `POST /auth/google` `{idToken}` | `200 AuthResponse`. The Google ID token from the iOS Google Sign-In SDK; its `aud` must be one of `GOOGLE_CLIENT_IDS`, otherwise `401`. `404` when `GOOGLE_CLIENT_IDS` is empty. Creates the account on first sign-in |
@@ -146,6 +146,11 @@ Friend changes and blocks take effect on a connected live socket immediately (pe
 ## Legal pages
 
 `GET /terms` and `GET /privacy` → `200 text/html`, **public, no token**, cached for an hour. English first, Arabic below it (right to left). They are the Terms of Use and Privacy Policy links App Review asks for (the Privacy Policy URL in App Store Connect is `https://place-rating-api-production.up.railway.app/privacy`), and the contact address on them is `SUPPORT_EMAIL`. The text lives in `src/legal/legal.pages.ts`: it describes what the app really stores and shows, so change it in the same commit as any behaviour it describes (what is kept, for how long, who sees it).
+
+**Shared place links**, public, no token:
+
+- `GET /p/:placeId` → `200 text/html`: the link the app shares (`https://<api>/p/<placeId>`). With Stoop installed, iOS opens the app on that place's sheet instead of loading the page. Without it, the page shows the place's name, average, rating count and category, with Open in Stoop (`stoop://place/<id>`), Google Maps and Apple Maps links, and Open Graph tags so WhatsApp, Instagram and iMessage show a preview. It shows nothing about people (no comments, names or photos). Arabic when `Accept-Language` starts with `ar`. Cached 5 minutes. An unknown or malformed id gets a `404 text/html` page, the one error that is not the JSON envelope, because people open it in a browser.
+- `GET /.well-known/apple-app-site-association` → `200 application/json` `{applinks: {details: [{appIDs: ["<APPLE_TEAM_ID>.<APPLE_BUNDLE_ID>"], components: [{"/": "/p/*"}]}]}}`, which Apple reads to send `/p/*` links to the app. `404 not_found` while `APPLE_TEAM_ID` is unset.
 
 ## Health
 

@@ -15,6 +15,10 @@ export interface AppConfig {
   apple: {
     /** The iOS app's bundle id. Apple puts it in the `aud` claim of identity tokens. */
     bundleId: string;
+    /** The developer team id. Universal links (`/.well-known/apple-app-site-association`) need it. null = off. */
+    teamId: string | null;
+    /** The Sign in with Apple key from the developer account, used to revoke tokens on deletion. null = off. */
+    signInKey: { teamId: string; keyId: string; privateKey: string } | null;
   };
   /** Enables `POST /auth/dev`, a sign-in that skips Apple. Never allowed in production. */
   devAuthEnabled: boolean;
@@ -124,7 +128,19 @@ export function loadConfig(env: Env = process.env): AppConfig {
       accessTtlSec,
       refreshTtlSec,
     },
-    apple: { bundleId: devAuthEnabled ? (env.APPLE_BUNDLE_ID ?? '') : need('APPLE_BUNDLE_ID') },
+    apple: {
+      bundleId: devAuthEnabled ? (env.APPLE_BUNDLE_ID ?? '') : need('APPLE_BUNDLE_ID'),
+      teamId: env.APPLE_TEAM_ID?.trim() || null,
+      signInKey:
+        env.APPLE_TEAM_ID && env.APPLE_KEY_ID && env.APPLE_PRIVATE_KEY
+          ? {
+              teamId: env.APPLE_TEAM_ID.trim(),
+              keyId: env.APPLE_KEY_ID.trim(),
+              // hosts often store the .p8 file on one line with literal \n
+              privateKey: env.APPLE_PRIVATE_KEY.replace(/\\n/g, '\n').trim(),
+            }
+          : null,
+    },
     devAuthEnabled,
     google: {
       clientIds: (env.GOOGLE_CLIENT_IDS ?? '').split(',').map((id) => id.trim()).filter(Boolean),
@@ -159,6 +175,12 @@ export function loadConfig(env: Env = process.env): AppConfig {
     problems.push('LIVE_* settings must be integers (LIVE_MIN_LOC_INTERVAL_MS may be 0)');
   }
   if (!config.s3.publicBaseUrl) problems.push('PUBLIC_BASE_URL is required');
+  if (Boolean(env.APPLE_KEY_ID) !== Boolean(env.APPLE_PRIVATE_KEY) || (env.APPLE_KEY_ID && !env.APPLE_TEAM_ID)) {
+    problems.push('APPLE_KEY_ID and APPLE_PRIVATE_KEY go together and need APPLE_TEAM_ID');
+  }
+  if (config.apple.teamId && !/^[A-Z0-9]{10}$/.test(config.apple.teamId)) {
+    problems.push('APPLE_TEAM_ID must be the 10-character team id');
+  }
   if (env.MAIL_PROVIDER && !['log', 'resend'].includes(env.MAIL_PROVIDER)) {
     problems.push('MAIL_PROVIDER must be log or resend');
   }

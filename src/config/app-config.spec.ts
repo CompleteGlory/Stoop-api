@@ -94,4 +94,22 @@ describe('loadConfig', () => {
     expect(() => loadConfig(withoutBundle)).toThrow(/APPLE_BUNDLE_ID/);
     expect(() => loadConfig({ ...withoutBundle, DEV_AUTH_ENABLED: 'true' })).not.toThrow();
   });
+
+  it('reads the Apple team id alone, and the revocation key only with all its parts', () => {
+    expect(loadConfig(valid).apple).toMatchObject({ teamId: null, signInKey: null });
+    const teamOnly = loadConfig({ ...valid, APPLE_TEAM_ID: 'ABCDE12345' }).apple;
+    expect(teamOnly).toMatchObject({ teamId: 'ABCDE12345', signInKey: null });
+
+    const full = loadConfig({
+      ...valid,
+      APPLE_TEAM_ID: 'ABCDE12345',
+      APPLE_KEY_ID: 'KEY1234567',
+      APPLE_PRIVATE_KEY: '-----BEGIN PRIVATE KEY-----\\nabc\\n-----END PRIVATE KEY-----',
+    }).apple.signInKey;
+    expect(full?.privateKey).toBe('-----BEGIN PRIVATE KEY-----\nabc\n-----END PRIVATE KEY-----');
+
+    expect(() => loadConfig({ ...valid, APPLE_KEY_ID: 'KEY1234567', APPLE_PRIVATE_KEY: 'x' })).toThrow(/APPLE_TEAM_ID/);
+    expect(() => loadConfig({ ...valid, APPLE_TEAM_ID: 'ABCDE12345', APPLE_KEY_ID: 'K' })).toThrow(/go together/);
+    expect(() => loadConfig({ ...valid, APPLE_TEAM_ID: 'short' })).toThrow(/10-character/);
+  });
 });

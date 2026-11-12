@@ -111,7 +111,13 @@ export class UsersService {
     const user = await this.mustFind(id);
     const friendIds = await this.graph.friendIds(id);
 
+    let appleRefreshToken: string | null = null;
     const photoKeys = await this.db.transaction(async (m) => {
+      const [tokenRow]: { apple_refresh_token: string | null }[] = await m.query(
+        `SELECT apple_refresh_token FROM users WHERE id = $1`,
+        [id],
+      );
+      appleRefreshToken = tokenRow?.apple_refresh_token ?? null;
       const placeRows: { place_id: string }[] = await m.query(
         `SELECT DISTINCT place_id FROM ratings WHERE user_id = $1`,
         [id],
@@ -131,7 +137,8 @@ export class UsersService {
         `UPDATE users
             SET deleted_at = now(), apple_sub = NULL, username = NULL, display_name = 'Deleted user',
                 avatar_style = NULL, avatar_options = NULL, ghost_mode = true,
-                email = NULL, email_verified_at = NULL, password_hash = NULL, google_sub = NULL
+                email = NULL, email_verified_at = NULL, password_hash = NULL, google_sub = NULL,
+                apple_refresh_token = NULL
           WHERE id = $1`,
         [id],
       );
@@ -141,6 +148,7 @@ export class UsersService {
     await this.tokens.revokeAccessTokens(id);
     await Promise.all(photoKeys.map((key) => this.storage.delete(key)));
     this.events.emit({ type: 'user-deleted', userId: id, friendIds });
+    if (appleRefreshToken) this.events.emit({ type: 'apple-token-revoke', refreshToken: appleRefreshToken });
   }
 
   /**

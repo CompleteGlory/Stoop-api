@@ -8,6 +8,12 @@ export class AppleSignInDto {
   @MaxLength(8192)
   identityToken: string;
 
+  /** Apple's one-time authorization code; swapped for a refresh token so it can be revoked on deletion. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(2048)
+  authorizationCode?: string;
+
   /** The raw nonce the app generated; its SHA-256 went to Apple. */
   @IsOptional()
   @IsString()

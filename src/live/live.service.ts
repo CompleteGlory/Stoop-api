@@ -232,6 +232,8 @@ export class LiveService implements OnModuleInit, OnModuleDestroy {
       case 'user-deleted':
         await this.dropUser(event.userId, event.friendIds);
         break;
+      case 'apple-token-revoke':
+        break;
     }
   }
 

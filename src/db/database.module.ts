@@ -10,6 +10,7 @@ import { InitSchema1700000000000 } from './migrations/1700000000000-init-schema.
 import { CharactersAndPlacePhotos1794400000000 } from './migrations/1794400000000-characters-and-place-photos.js';
 import { EmailAndGoogleSignIn1794500000000 } from './migrations/1794500000000-email-and-google-sign-in.js';
 import { UsernameAtEmailSignUp1794600000000 } from './migrations/1794600000000-username-at-email-sign-up.js';
+import { AppleRefreshToken1794700000000 } from './migrations/1794700000000-apple-refresh-token.js';
 
 export const ENTITIES = [User, RefreshToken, Friendship, Block, Report];
 
@@ -28,6 +29,7 @@ export const ENTITIES = [User, RefreshToken, Friendship, Block, Report];
           CharactersAndPlacePhotos1794400000000,
           EmailAndGoogleSignIn1794500000000,
           UsernameAtEmailSignUp1794600000000,
+          AppleRefreshToken1794700000000,
         ],
         migrationsRun: true,
         synchronize: false,
