@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { APP_CONFIG, type AppConfig } from '../config/app-config.js';
+import { APP_CONFIG, type AppConfig, parseSender } from '../config/app-config.js';
 
 export interface Email {
   to: string;
@@ -44,6 +44,35 @@ export class ResendMailer extends Mailer {
     if (!res.ok) {
       // never log the address or the body: it holds the code
       this.logger.error(`Resend answered ${res.status}`);
+      throw new Error(`Could not send email (${res.status})`);
+    }
+  }
+}
+
+/**
+ * Sends through Brevo's HTTP API (https://developers.brevo.com/reference/sendtransacemail). Brevo
+ * accepts a single verified sender address, so it works without a domain of our own.
+ */
+@Injectable()
+export class BrevoMailer extends Mailer {
+  private readonly logger = new Logger('Mail');
+
+  constructor(@Inject(APP_CONFIG) private readonly config: AppConfig) {
+    super();
+  }
+
+  async send(email: Email): Promise<void> {
+    // the config refuses to load with an unparseable MAIL_FROM, so this is always set
+    const sender = parseSender(this.config.email.from);
+    const res = await fetch('https://api.brevo.com/v3/smtp/email', {
+      method: 'POST',
+      headers: { 'api-key': this.config.email.brevoApiKey, 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ sender, to: [{ email: email.to }], subject: email.subject, textContent: email.text }),
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!res.ok) {
+      // never log the address or the body: it holds the code
+      this.logger.error(`Brevo answered ${res.status}`);
       throw new Error(`Could not send email (${res.status})`);
     }
   }

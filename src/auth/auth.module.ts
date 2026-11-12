@@ -4,7 +4,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { User } from '../db/entities/user.entity.js';
 import { UsersModule } from '../users/users.module.js';
 import { APP_CONFIG, type AppConfig } from '../config/app-config.js';
-import { LogMailer, Mailer, ResendMailer } from '../mail/mailer.js';
+import { BrevoMailer, LogMailer, Mailer, ResendMailer } from '../mail/mailer.js';
 import { AppleVerifier, JoseAppleVerifier } from './apple-verifier.js';
 import { AppleRevoker, AppleTokenClient, HttpAppleTokenClient } from './apple-tokens.js';
 import { EmailCodesService } from './email-codes.service.js';
@@ -27,8 +27,16 @@ import { TokensModule } from './tokens.module.js';
     {
       provide: Mailer,
       inject: [APP_CONFIG],
-      useFactory: (config: AppConfig) =>
-        config.email.provider === 'resend' ? new ResendMailer(config) : new LogMailer(),
+      useFactory: (config: AppConfig) => {
+        switch (config.email.provider) {
+          case 'resend':
+            return new ResendMailer(config);
+          case 'brevo':
+            return new BrevoMailer(config);
+          case 'log':
+            return new LogMailer();
+        }
+      },
     },
     // every route needs a valid access token unless it is marked @Public()
     { provide: APP_GUARD, useClass: AuthGuard },

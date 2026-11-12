@@ -1,5 +1,8 @@
 export const APP_CONFIG = Symbol('APP_CONFIG');
 
+const mailProviders = ['log', 'resend', 'brevo'] as const;
+export type MailProvider = (typeof mailProviders)[number];
+
 export interface AppConfig {
   nodeEnv: 'development' | 'test' | 'production';
   port: number;
@@ -31,10 +34,14 @@ export interface AppConfig {
   email: {
     /** Email and password sign-up and sign-in. Off unless switched on. */
     enabled: boolean;
-    /** `log` writes emails to the server log (development); `resend` sends them. */
-    provider: 'log' | 'resend';
+    /** `log` writes emails to the server log (development); `resend` and `brevo` send them. */
+    provider: MailProvider;
     resendApiKey: string;
-    /** The sender, such as `Stoop <hello@your-domain>`; the domain must be verified in Resend. */
+    brevoApiKey: string;
+    /**
+     * The sender, such as `Stoop <hello@your-domain>`. With Resend the domain must be verified there;
+     * Brevo also accepts a single verified address (a Gmail one works, no domain needed).
+     */
     from: string;
   };
   live: {
@@ -148,8 +155,9 @@ export function loadConfig(env: Env = process.env): AppConfig {
     supportEmail: (env.SUPPORT_EMAIL || 'magddevf@gmail.com').trim(),
     email: {
       enabled: bool(env.EMAIL_AUTH_ENABLED, false),
-      provider: env.MAIL_PROVIDER === 'resend' ? 'resend' : 'log',
+      provider: mailProviders.find((p) => p === env.MAIL_PROVIDER) ?? 'log',
       resendApiKey: env.RESEND_API_KEY ?? '',
+      brevoApiKey: env.BREVO_API_KEY ?? '',
       from: env.MAIL_FROM ?? '',
     },
     live: {
@@ -181,19 +189,34 @@ export function loadConfig(env: Env = process.env): AppConfig {
   if (config.apple.teamId && !/^[A-Z0-9]{10}$/.test(config.apple.teamId)) {
     problems.push('APPLE_TEAM_ID must be the 10-character team id');
   }
-  if (env.MAIL_PROVIDER && !['log', 'resend'].includes(env.MAIL_PROVIDER)) {
-    problems.push('MAIL_PROVIDER must be log or resend');
+  if (env.MAIL_PROVIDER && !mailProviders.some((p) => p === env.MAIL_PROVIDER)) {
+    problems.push('MAIL_PROVIDER must be log, resend or brevo');
   }
   if (config.email.enabled && config.email.provider === 'resend' && (!config.email.resendApiKey || !config.email.from)) {
     problems.push('MAIL_PROVIDER=resend needs RESEND_API_KEY and MAIL_FROM');
   }
+  if (config.email.enabled && config.email.provider === 'brevo') {
+    if (!config.email.brevoApiKey || !config.email.from) {
+      problems.push('MAIL_PROVIDER=brevo needs BREVO_API_KEY and MAIL_FROM');
+    } else if (!parseSender(config.email.from)) {
+      problems.push('MAIL_FROM must be an address, or Name <address>');
+    }
+  }
   // codes written to the log would let anyone with log access take over accounts
-  if (isProd && config.email.enabled && config.email.provider !== 'resend') {
-    problems.push('EMAIL_AUTH_ENABLED in production needs MAIL_PROVIDER=resend');
+  if (isProd && config.email.enabled && config.email.provider === 'log') {
+    problems.push('EMAIL_AUTH_ENABLED in production needs MAIL_PROVIDER=resend or brevo');
   }
 
   if (problems.length > 0) {
     throw new Error(`Invalid configuration:\n- ${problems.join('\n- ')}`);
   }
   return config;
+}
+
+/** Splits `Stoop <a@b.c>` (or a bare `a@b.c`) into name and address; null when it isn't one. */
+export function parseSender(from: string): { name?: string; email: string } | null {
+  const match = /^\s*(?:(.*?)\s*<([^<>\s]+@[^<>\s]+)>|([^<>\s]+@[^<>\s]+))\s*$/.exec(from);
+  if (!match) return null;
+  const name = match[1]?.replace(/^"|"$/g, '').trim();
+  return { ...(name ? { name } : {}), email: match[2] ?? match[3] };
 }

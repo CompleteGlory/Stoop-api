@@ -1,4 +1,4 @@
-import { loadConfig } from './app-config.js';
+import { loadConfig, parseSender } from './app-config.js';
 
 const valid = {
   DATABASE_URL: 'postgres://u:p@localhost:5432/db',
@@ -80,6 +80,22 @@ describe('loadConfig', () => {
       loadConfig({ ...prod, MAIL_PROVIDER: 'resend', RESEND_API_KEY: 're_x', MAIL_FROM: 'Stoop <a@b.c>' }).email.enabled,
     ).toBe(true);
     expect(() => loadConfig({ ...valid, MAIL_PROVIDER: 'pigeon' })).toThrow(/MAIL_PROVIDER/);
+  });
+
+  it('accepts Brevo in production with its key and a sender address', () => {
+    const prod = { ...valid, NODE_ENV: 'production', EMAIL_AUTH_ENABLED: 'true', MAIL_PROVIDER: 'brevo' };
+    expect(() => loadConfig(prod)).toThrow(/BREVO_API_KEY and MAIL_FROM/);
+    expect(() => loadConfig({ ...prod, BREVO_API_KEY: 'xkeysib-x', MAIL_FROM: 'Stoop' })).toThrow(/MAIL_FROM must be/);
+    const c = loadConfig({ ...prod, BREVO_API_KEY: 'xkeysib-x', MAIL_FROM: 'Stoop <someone@gmail.com>' });
+    expect(c.email).toMatchObject({ enabled: true, provider: 'brevo', brevoApiKey: 'xkeysib-x' });
+  });
+
+  it('splits a sender into name and address', () => {
+    expect(parseSender('Stoop <a@b.c>')).toEqual({ name: 'Stoop', email: 'a@b.c' });
+    expect(parseSender(' "Stoop App" <a@b.c> ')).toEqual({ name: 'Stoop App', email: 'a@b.c' });
+    expect(parseSender('a@b.c')).toEqual({ email: 'a@b.c' });
+    expect(parseSender('Stoop')).toBeNull();
+    expect(parseSender('Stoop <not-an-address>')).toBeNull();
   });
 
   it('still reads the old AVATAR_PUBLIC_BASE_URL name', () => {
