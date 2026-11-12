@@ -176,6 +176,7 @@ export class LiveService implements OnModuleInit, OnModuleDestroy {
       return;
     }
     this.fanOut(conn, { t: 'loc', d: { userId: conn.userId, ...parsed.value } });
+    this.events.emit({ type: 'live-position', userId: conn.userId, lat: parsed.value.lat, lng: parsed.value.lng });
   }
 
   async handleGhost(socket: WebSocket, raw: unknown) {
@@ -232,8 +233,8 @@ export class LiveService implements OnModuleInit, OnModuleDestroy {
       case 'user-deleted':
         await this.dropUser(event.userId, event.friendIds);
         break;
-      case 'apple-token-revoke':
-        break;
+      default:
+        break; // handled elsewhere
     }
   }
 

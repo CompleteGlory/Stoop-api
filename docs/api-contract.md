@@ -29,13 +29,15 @@ Switch on `code`, show `message` only for debugging.
 | 400 | `invalid_target` | Friending/blocking/reporting yourself, or reporting your own rating |
 | 400 | `invalid_key` | Photo upload key does not belong to you |
 | 400 | `invalid_avatar` | `PATCH /me` `avatar` is not a valid character: unknown style, option or value |
+| 400 | `invalid_device_token` | `/me/devices/:token` is not a hex APNs device token (64–200 hex characters) |
 | 401 | `unauthorized` | Missing, invalid or expired access token; bad Apple or Google token; bad/used refresh token; account deleted |
 | 401 | `invalid_credentials` | Email sign-in with a wrong email or password (the two are never told apart) |
 | 403 | `email_not_verified` | Email sign-in before the sign-up code was entered (only with the right password) |
 | 403 | `username_required` | The account has not picked a username yet. Every signed-in route except `/me` and `/users/availability` returns this until `PATCH /me {username}` succeeds |
 | 404 | `not_found` | Unknown route or resource. Blocked and deleted users also look "not found" |
 | 409 | `username_taken`, `already_friends` | |
-| 422 | `username_reserved`, `invalid_image`, `image_too_large` | |
+| 409 | `nearby_alerts_off` | `POST /me/position` while `nearbyAlerts` is off: stop background reporting |
+| 422 | `username_reserved`, `invalid_image`, `image_too_large`, `accuracy_too_low` | |
 | 429 | `rate_limited` | See the limits table |
 | 500 | `internal_error` | Bug on our side |
 
@@ -50,7 +52,7 @@ PublicUser      { id, username: string | null, displayName, avatar: Avatar | nul
                   avatar is null until the person picks a character
 PlacePhoto      { id, kind: "place" | "menu", url, thumbnailUrl, width, height, createdAt, user: PublicUser }
                   url: JPEG at most 1600 px; thumbnailUrl: 400 px square; both absolute and immutable
-SelfUser        PublicUser + { ghostMode: boolean, createdAt }
+SelfUser        PublicUser + { ghostMode: boolean, nearbyAlerts: boolean, createdAt }
 Place           { id, appleId: string | null, name, category: string | null,
                   latitude, longitude, avgRating: number, ratingCount: number }
                   avgRating is 0 when ratingCount is 0, otherwise rounded to 2 decimals
@@ -88,8 +90,8 @@ Access tokens last 15 minutes (`expiresIn`), refresh tokens 30 days. Sign-in cal
 | Request | Response |
 | --- | --- |
 | `GET /me` | `SelfUser` |
-| `PATCH /me` `{username?, displayName?, ghostMode?, avatar?}` | `200 SelfUser`. `username`: 3–20 chars of `a-z 0-9 _ .`, trimmed and lowercased by the server, unique, can be changed but never cleared (`null` gives `400 validation_failed`); reserved: `admin administrator support help root moderator official staff null undefined`. `displayName`: 1–40 chars. `avatar`: a character `{style, options}` as described under Shared types; anything else gives `400 invalid_avatar`. `ghostMode` also updates a live socket immediately. Errors: `409 username_taken`, `422 username_reserved` |
-| `DELETE /me` | `204`. Deletes ratings, friendships, blocks, sessions and the person's place photos (with their files), anonymises the row, recomputes place averages, tells friends' sockets the marker is gone. The current access token stops working right away (`401`) |
+| `PATCH /me` `{username?, displayName?, ghostMode?, nearbyAlerts?, avatar?}` | `200 SelfUser`. `username`: 3–20 chars of `a-z 0-9 _ .`, trimmed and lowercased by the server, unique, can be changed but never cleared (`null` gives `400 validation_failed`); reserved: `admin administrator support help root moderator official staff null undefined`. `displayName`: 1–40 chars. `avatar`: a character `{style, options}` as described under Shared types; anything else gives `400 invalid_avatar`. `ghostMode` also updates a live socket immediately. `nearbyAlerts` switches "a friend is nearby" pushes (see Push notifications); turning it off also forgets the last background position. Errors: `409 username_taken`, `422 username_reserved` |
+| `DELETE /me` | `204`. Deletes ratings, friendships, blocks, sessions, push devices and the person's place photos (with their files), anonymises the row, recomputes place averages, tells friends' sockets the marker is gone. The current access token stops working right away (`401`) |
 
 
 ## Users
@@ -139,6 +141,28 @@ Upload recipe: (1) `POST upload-url` with the exact byte count of the file; (2) 
 
 Friend changes and blocks take effect on a connected live socket immediately (people appear or get a `gone` frame).
 
+## Push notifications
+
+The app registers its APNs device token after sign-in; the server sends a push when someone sends you a friend request, when someone accepts yours, and (with `nearbyAlerts` on) when a friend is within 500 m.
+
+| Request | Response |
+| --- | --- |
+| `PUT /me/devices/:token` `{environment: "sandbox" \| "production"}` | `204`. `:token` is the APNs device token in hex (any case). `sandbox` for builds run from Xcode, `production` for TestFlight and the App Store. A token registered by another account moves to yours (one phone, one account). `400 invalid_device_token` |
+| `DELETE /me/devices/:token` | `204`, idempotent; only removes the token if it is yours. Call it before signing out |
+| `POST /me/position` `{lat, lng, accuracy}` | `204`. A background position (iOS significant-location change), used **only** to check whether friends are near; it never reaches another person. Kept in Redis rounded to 3 decimals (about 110 m) for 30 minutes, latest only. Ignored in ghost mode. `409 nearby_alerts_off` when the switch is off (stop reporting), `422 accuracy_too_low` above 1000 m, `400 validation_failed`. 120 per hour |
+
+What is sent:
+
+| `kind` | To | Text (`loc-key`, localised by the app; `loc-args` = the other person's display name) |
+| --- | --- | --- |
+| `friend-request` | the person asked | title `Friend request`, body `%@ wants to be friends` |
+| `friend-accepted` | the person who asked | title `New friend`, body `%@ accepted your friend request` |
+| `nearby` | each friend of the pair who has `nearbyAlerts` on | title `Friend nearby`, body `%@ is nearby` |
+
+The payload is `{aps: {alert: {title-loc-key, loc-key, loc-args}, sound: "default", thread-id: "friends" | "nearby"}, kind, userId}`, where `userId` is the other person (open their marker or the friends list on tap). The same kind from the same person replaces the previous notification (`apns-collapse-id`).
+
+Nearby rules: two accepted, non-blocked friends, neither in ghost mode, whose latest positions (a live socket `loc`, or a background report from the last 30 minutes) are within 500 m. Each person is checked at most once a minute, and one pair is alerted at most once every 3 hours. A person with `nearbyAlerts` off still counts as a position while their app is open and sharing (their friends see them on the map then anyway), but gets no nearby pushes and sends no background reports. Pushes are best effort: nothing is sent while the APNs key is not configured, and tokens Apple reports as dead are deleted.
+
 ## Reports
 
 `POST /reports` `{targetType: "user" | "rating" | "photo", targetId, reason: "spam" | "abuse" | "inappropriate" | "impersonation" | "other", details?: ≤500}` → `201 { id, status: "open" }`. For `user` the `targetId` is the user id, for `rating` the rating id, for `photo` the photo id. `400 invalid_target` (yourself, your own rating or your own photo), `404 not_found`. 20 per day. There is no admin UI yet: reports are read in SQL (see `operations.md`).
@@ -169,6 +193,7 @@ Counted per signed-in user in Redis (fixed windows), except sign-in which is per
 | Photo upload URLs | 30 / hour |
 | New place photos | 60 / day |
 | Reports | 20 / day |
+| Background positions (`POST /me/position`) | 120 / hour |
 | `POST /places/resolve` | 120 / hour |
 | `POST /auth/*` (apple, google, email, password, refresh) | 30 / minute per IP |
 | Emails to one address (sign-up, resend, forgot) | 5 / hour |

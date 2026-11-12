@@ -18,7 +18,7 @@ A one-screen iOS app where small groups of friends (2–10, same city) see each 
 
 ### Non-goals for v1
 
-Chat, stories, discovery of strangers. Background location (sharing works only while the app is open). Android, iPad layouts, web client.
+Chat, stories, discovery of strangers. Background location on the map (friends see you move only while the app is open; the one background use is the opt-in nearby check below). Android, iPad layouts, web client.
 
 ## The screen
 
@@ -60,11 +60,13 @@ A rating saves the moment a star is tapped; the comment saves when its field los
 Live location is the riskiest feature; defaults are conservative and the user can always see and stop sharing.
 
 - **Location:** When In Use only. Show an explanation screen before the system prompt. Purpose string: "Your location is shown to friends you accept, while the app is open." Stop sending and close the socket when the app leaves the foreground. No location history; logs must never contain coordinates.
+- **Nearby alerts (added 2026-11-12, opt-in, off by default):** a Settings switch asks for notifications and then "Always" location. With it on, the phone reports a coarse position after it moves about 500 m (significant-location changes, even with the app closed) to `POST /me/position`. The server keeps only the latest, rounded to about 110 m, for 30 minutes, uses it only to tell two friends they are within 500 m (once per pair per 3 hours), and never shows it on a map. Ghost mode and switching it off stop it. App Review: the Always purpose string must say exactly this, and the App Privacy label stays "precise location, linked, app functionality".
+- **Push notifications:** a friend request, an accepted request, and (opt-in) a friend nearby. The text names the other person only; nearby pushes carry no distance or place.
 - **Who sees what:** only accepted friends see live position; a request needs acceptance. Ghost mode removes you from every friend's map immediately. A block removes both people from each other's map, friend list and rating details. Friends are found by username search only (never email or Apple ID; 3+ characters; skips blocked users).
 - **User-generated content** (ratings, comments, place photos) needs, for App Review: terms of use accepted at sign-up; a report action on every user, rating and photo; a block action on every user; a way to act on reports quickly (check the `reports` table daily); a support contact address.
 - **Account and data:** in-app account deletion (`DELETE /me`). Honest privacy labels: precise location linked to the user and used for app functionality, plus user content and identifiers. Publish a privacy policy URL before TestFlight external testing.
 - **Place photos:** JPEG/PNG up to 10 MB, real file type checked on the server, EXIF stripped (it can carry GPS), only re-encoded copies are served. Avatars are drawn characters, so no personal photos are stored.
-- **Apple also expects** the Sign in with Apple token to be revoked on account deletion; this backend does not do that yet (see `operations.md`, "Known gaps").
+- **Apple also expects** the Sign in with Apple token to be revoked on account deletion; this backend does it once `APPLE_KEY_ID` and `APPLE_PRIVATE_KEY` are set (see `operations.md`).
 
 ## Build order
 

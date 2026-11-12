@@ -85,6 +85,7 @@ export class FriendsService {
       const created = await this.friendships.save(
         this.friendships.create({ requesterId: userId, addresseeId: targetId, status: 'pending' }),
       );
+      this.events.emit({ type: 'friend-requested', fromId: userId, toId: targetId });
       return { id: created.id, status: 'pending' };
     } catch (err) {
       if (!isUniqueViolation(err)) throw err;
@@ -124,6 +125,7 @@ export class FriendsService {
     );
     if (res.affected !== 1) throw ApiError.notFound('Friend request');
     this.events.emit({ type: 'relations-changed', userIds: [row.requesterId, row.addresseeId] });
+    this.events.emit({ type: 'friend-accepted', byId: userId, requesterId: row.requesterId });
   }
 
   /** Removes a friend, cancels a request you sent, or declines one you received. Idempotent. */

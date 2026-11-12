@@ -27,6 +27,11 @@ export class UpdateMeDto {
   @IsBoolean()
   ghostMode?: boolean;
 
+  /** "A friend is nearby" pushes; turning it off also forgets the last background position. */
+  @IsOptional()
+  @IsBoolean()
+  nearbyAlerts?: boolean;
+
   /** The person's DiceBear character, `{ style, options }`; checked in full by `validateCharacter`. */
   @ValidateIf((_, value) => value !== undefined)
   @IsObject()

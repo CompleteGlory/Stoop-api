@@ -3,6 +3,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { APP_CONFIG, type AppConfig } from '../config/app-config.js';
 import { Block } from './entities/block.entity.js';
 import { Friendship } from './entities/friendship.entity.js';
+import { PushDevice } from './entities/push-device.entity.js';
 import { RefreshToken } from './entities/refresh-token.entity.js';
 import { Report } from './entities/report.entity.js';
 import { User } from './entities/user.entity.js';
@@ -11,8 +12,9 @@ import { CharactersAndPlacePhotos1794400000000 } from './migrations/179440000000
 import { EmailAndGoogleSignIn1794500000000 } from './migrations/1794500000000-email-and-google-sign-in.js';
 import { UsernameAtEmailSignUp1794600000000 } from './migrations/1794600000000-username-at-email-sign-up.js';
 import { AppleRefreshToken1794700000000 } from './migrations/1794700000000-apple-refresh-token.js';
+import { PushAndNearby1794800000000 } from './migrations/1794800000000-push-and-nearby.js';
 
-export const ENTITIES = [User, RefreshToken, Friendship, Block, Report];
+export const ENTITIES = [User, RefreshToken, Friendship, Block, Report, PushDevice];
 
 @Module({
   imports: [
@@ -30,6 +32,7 @@ export const ENTITIES = [User, RefreshToken, Friendship, Block, Report];
           EmailAndGoogleSignIn1794500000000,
           UsernameAtEmailSignUp1794600000000,
           AppleRefreshToken1794700000000,
+          PushAndNearby1794800000000,
         ],
         migrationsRun: true,
         synchronize: false,

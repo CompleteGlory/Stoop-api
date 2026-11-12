@@ -41,6 +41,7 @@ Unknown or unparseable frames are dropped silently. WebSocket-level ping frames 
 - Only **accepted, non-blocked friends** receive your position, and only while you are not in ghost mode. You only receive friends who can see you too (the relationship must hold in both directions).
 - Updates from one person closer than **2 s** apart are dropped without an error. Validation runs first, so an invalid frame still gets its `error`.
 - Your latest fix lives only in Redis (`loc:{userId}`) and **expires after 60 s** without a new `loc`. On disconnect or ghost it is deleted and friends get `gone`. Nothing is written to Postgres; there is no history.
+- Accepted `loc` positions are also compared with friends' positions for "a friend is nearby" pushes (at most once a minute per person, see `api-contract.md`, Push notifications). That comparison happens in the server; nothing extra is sent on the socket.
 - Friend requests accepted/removed, blocks and account deletions made through REST update the live graph immediately (new friends appear with `loc`, former friends get `gone`). The server also re-reads the friend list every 60 s as a safety net.
 
 ## What the client does

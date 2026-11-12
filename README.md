@@ -180,6 +180,8 @@ erDiagram
 | --- | --- | --- |
 | Accounts, places, ratings, friendships, blocks, reports, refresh-token hashes | Postgres + PostGIS | Until deleted (account deletion anonymises the user and removes their ratings, friendships, blocks, sessions and place photos) |
 | A person's latest live position | Redis `loc:{userId}` | 60 s after the last update; deleted on disconnect or ghost mode; never in Postgres, no history |
+| The latest background position of someone with nearby alerts on, rounded to about 110 m, only compared with friends' | Redis `near:{userId}` | 30 min; deleted on ghost mode, alerts off or deletion; never sent to anyone |
+| Push device tokens | Postgres `push_devices` | Until sign-out, account deletion, or Apple reports the token dead |
 | Rate-limit counters | Redis `rl:...` | One minute, hour or day window |
 | "This user was deleted" marker for access tokens | Redis `revoked:user:{userId}` | Access-token lifetime + 60 s |
 | Place and menu photos | Private bucket `photos/{placeId}/{id}.jpg` (at most 1600 px) and `{id}-t.jpg` (400 px thumbnail), JPEG without EXIF, served through `GET /photos/...` | Until the person who added it deletes it or their account |
@@ -376,8 +378,10 @@ All routes except `/auth/*` and `/health` need `Authorization: Bearer <accessTok
 | `POST /auth/email/signup`, `/email/verify`, `/email/resend`, `/email/signin` | Email and password sign-in with a 6-digit code emailed through Resend or Brevo (`EMAIL_AUTH_ENABLED`) |
 | `POST /auth/password/forgot`, `/password/reset` | Password reset by emailed code; signs out other sessions |
 | `POST /auth/dev` `{username}` | Development-only sign-in (see above) |
-| `GET /me`, `PATCH /me` `{username?, displayName?, ghostMode?, avatar?}` | Profile. `username` is 3-20 chars of `a-z 0-9 _ .`, unique, lowercased. `avatar` is a DiceBear character `{style, options}`, checked against that style's options |
-| `DELETE /me` | Deletes the account: ratings, friendships, blocks and sessions go; the row is anonymised; friends are told the marker is gone |
+| `GET /me`, `PATCH /me` `{username?, displayName?, ghostMode?, nearbyAlerts?, avatar?}` | Profile. `username` is 3-20 chars of `a-z 0-9 _ .`, unique, lowercased. `avatar` is a DiceBear character `{style, options}`, checked against that style's options |
+| `DELETE /me` | Deletes the account: ratings, friendships, blocks, sessions and push devices go; the row is anonymised; friends are told the marker is gone |
+| `PUT /me/devices/:token` `{environment}`, `DELETE /me/devices/:token` | Register or remove this phone's APNs token for pushes (friend requests, accepts, nearby friends) |
+| `POST /me/position` `{lat, lng, accuracy}` | Background position for nearby alerts only (needs `nearbyAlerts` on); kept coarse in Redis for 30 min, never shown to anyone |
 | `GET /users/search?q=` | Username prefix search, 3+ chars, max 20, excludes you and blocked people, shows `friendStatus` |
 | `GET /users/availability?username=` | Whether a username can be saved, with the reason if not. Works before onboarding and signed out (the email sign-up screen) |
 | `GET /places?bbox=minLng,minLat,maxLng,maxLat` | Places in the box (max 200, box at most 5 degrees wide) |
@@ -401,7 +405,7 @@ All routes except `/auth/*` and `/health` need `Authorization: Bearer <accessTok
 | `GET /.well-known/apple-app-site-association` | Tells iOS which links open the app; needs `APPLE_TEAM_ID` |
 | `GET /terms`, `GET /privacy` | The Terms of Use and Privacy Policy as HTML (English and Arabic), public; the contact address is `SUPPORT_EMAIL` |
 
-Rate limits (per person, in Redis): 30 rating writes/hour, 20 friend requests/day, 60 username searches/hour, 30 photo uploads/hour, 60 new photos/day, 300 username checks/hour, 20 reports/day, 120 place lookups/hour; 30 sign-in calls/minute per IP.
+Rate limits (per person, in Redis): 30 rating writes/hour, 20 friend requests/day, 60 username searches/hour, 30 photo uploads/hour, 60 new photos/day, 120 background positions/hour, 300 username checks/hour, 20 reports/day, 120 place lookups/hour; 30 sign-in calls/minute per IP.
 
 ## Live location: `ws://host/live`
 
@@ -483,7 +487,8 @@ Verified in the sandbox where this was written: build, lint, 54 unit tests and 4
 
 ## Things to know before shipping
 
-- **Apple account deletion:** App Review expects you to also revoke the person's Sign in with Apple token when they delete their account (Apple's `/auth/revoke` endpoint, which needs a client secret generated from your Apple developer key). Not implemented here; deletion removes everything on our side only.
+- **Apple account deletion:** the person's Sign in with Apple token is revoked once `APPLE_KEY_ID` and `APPLE_PRIVATE_KEY` are set.
+- **Push notifications** (friend requests, accepts, nearby friends) are sent only once `APNS_KEY_ID` and `APNS_PRIVATE_KEY` are set; see `docs/operations.md`.
 - **One instance only for live location:** pushes to friends happen in memory of the process that holds the socket. With several instances, friends on another instance would not get updates. Fix by publishing frames through Redis pub/sub (positions are already in Redis, so `hello` works everywhere).
 - **PostGIS is required.** The first migration runs `CREATE EXTENSION postgis`; use the `postgis/postgis` image or a host whose Postgres offers the extension.
 - **Photos go through the API:** the bucket stays private (Railway buckets cannot be public). Photos live under `photos/<placeId>/<id>.jpg` and `GET /photos/...` streams them; `PUBLIC_BASE_URL` (old name `AVATAR_PUBLIC_BASE_URL`, still read) is this API's own public address. Each photo is fetched once per device because responses are cacheable forever, but if photo traffic ever gets large, put a CDN in front of that route. Unconfirmed uploads under `uploads/` are never cleaned up automatically; add a lifecycle rule that expires them after a day on a bucket that supports it (Railway's does not yet).

@@ -128,4 +128,22 @@ describe('loadConfig', () => {
     expect(() => loadConfig({ ...valid, APPLE_TEAM_ID: 'ABCDE12345', APPLE_KEY_ID: 'K' })).toThrow(/go together/);
     expect(() => loadConfig({ ...valid, APPLE_TEAM_ID: 'short' })).toThrow(/10-character/);
   });
+
+  it('turns pushes on only with the APNs key, and defaults the nearby alerts', () => {
+    const off = loadConfig(valid);
+    expect(off.apns).toBeNull();
+    expect(off.nearby).toEqual({ radiusM: 500, cooldownSec: 10_800, positionTtlSec: 1800 });
+
+    const on = loadConfig({
+      ...valid,
+      APPLE_TEAM_ID: 'ABCDE12345',
+      APNS_KEY_ID: 'PUSH123456',
+      APNS_PRIVATE_KEY: 'line1\\nline2',
+    }).apns;
+    expect(on).toEqual({ teamId: 'ABCDE12345', keyId: 'PUSH123456', privateKey: 'line1\nline2' });
+
+    expect(() => loadConfig({ ...valid, APNS_KEY_ID: 'PUSH123456', APNS_PRIVATE_KEY: 'x' })).toThrow(/APNS_KEY_ID/);
+    expect(() => loadConfig({ ...valid, APPLE_TEAM_ID: 'ABCDE12345', APNS_KEY_ID: 'P' })).toThrow(/go together/);
+    expect(() => loadConfig({ ...valid, NEARBY_RADIUS_M: '0' })).toThrow(/NEARBY_/);
+  });
 });

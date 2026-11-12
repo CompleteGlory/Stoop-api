@@ -29,6 +29,8 @@ describe('terms and privacy pages', () => {
   it('says what the app really does with location and with deleting an account', async () => {
     const privacy = (await api().get('/privacy').expect(200)).text;
     expect(privacy).toMatch(/60 seconds/);
+    expect(privacy).toMatch(/Nearby alerts \(only if you turn them on\)/);
+    expect(privacy).toMatch(/30 minutes/);
     expect(privacy).toMatch(/Delete account/);
     expect(privacy).toMatch(/never stored|not stored/i);
     const terms = (await api().get('/terms').expect(200)).text;

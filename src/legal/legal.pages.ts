@@ -90,6 +90,8 @@ export function privacyPage(supportEmail: string): string {
             '<strong>What you add:</strong> your ratings and comments, and photos of places and menus. We remove location data from photos before anyone sees them.',
             '<strong>Friends and safety:</strong> friend requests and friendships, people you block, and reports you send.',
             '<strong>Your location:</strong> only while the app is open and you are not in ghost mode, your phone sends your position to our server, which passes it on to your accepted friends. It is kept in the server\'s memory for at most 60 seconds and is never stored in a database. There is no location history.',
+            '<strong>Nearby alerts (only if you turn them on):</strong> your phone also sends a rough position (to about 100 metres) when you have moved a few hundred metres, even while Stoop is closed. The server keeps only the latest one, for at most 30 minutes, and uses it only to tell you and a friend that you are within 500 metres of each other. Nobody sees it on the map, and it is never stored in a database.',
+            '<strong>Notifications:</strong> if you allow them, the push token Apple gives your phone, used only to send you Stoop notifications (friend requests, accepted requests and, if turned on, nearby friends). It is removed when you sign out or delete your account.',
             '<strong>Technical data:</strong> your IP address and sign-in sessions, used to keep your account secure and to stop abuse. They are short-lived counters and tokens, not a profile of you.',
           ],
         ],
@@ -105,6 +107,7 @@ export function privacyPage(supportEmail: string): string {
         body: [
           [
             'Only friends you have accepted (and who have not blocked you) can see where you are, and only while you are not in ghost mode.',
+            'With nearby alerts on, a friend who also uses them may get a notification that you are nearby. It names you but does not say where you are.',
             'Anyone using Stoop can see your username, character, and the ratings, comments and photos you add to a place.',
             'People you block, and people who block you, cannot see each other anywhere in Stoop.',
           ],
@@ -113,7 +116,7 @@ export function privacyPage(supportEmail: string): string {
       {
         heading: 'Services we use',
         body: [
-          'Apple (Sign in with Apple and Apple Maps), Google (optional sign-in), Railway (hosting for our servers, database and photo storage) and Resend (sends your sign-in codes if you use email). They process data for us only to provide these services.',
+          'Apple (Sign in with Apple, Apple Maps and notifications), Google (optional sign-in), Railway (hosting for our servers, database and photo storage) and Brevo (sends your sign-in codes if you use email). They process data for us only to provide these services.',
         ],
       },
       {
@@ -121,8 +124,9 @@ export function privacyPage(supportEmail: string): string {
         body: [
           [
             'Turn on ghost mode to hide yourself from friends, or turn off location for Stoop in iOS Settings.',
+            'Nearby alerts are off until you turn them on in Stoop\'s settings, and you can turn them off there, or turn off notifications for Stoop in iOS Settings, at any time.',
             'Change your username and character any time in the app.',
-            'Delete your account in the app: Profile, then <strong>Delete account</strong>. This removes your ratings, comments, photos, friendships, blocks and sessions, and anonymises your account. Reports you sent, or that were made about you, may be kept so we can keep Stoop safe.',
+            'Delete your account in the app: Profile, then <strong>Delete account</strong>. This removes your ratings, comments, photos, friendships, blocks, sessions and notification tokens, and anonymises your account. Reports you sent, or that were made about you, may be kept so we can keep Stoop safe.',
             `You can also ask us by email: ${mail}.`,
           ],
         ],
@@ -151,6 +155,8 @@ export function privacyPage(supportEmail: string): string {
             '<strong>ما تضيفه:</strong> تقييماتك وتعليقاتك وصور الأماكن والقوائم. نزيل بيانات الموقع من الصور قبل أن يراها أي أحد.',
             '<strong>الأصدقاء والأمان:</strong> طلبات الصداقة والصداقات ومن تحظرهم والبلاغات التي ترسلها.',
             '<strong>موقعك:</strong> فقط أثناء فتح التطبيق وعندما لا تكون في وضع الإخفاء، يرسل هاتفك موقعك إلى خادمنا ليمرّره إلى أصدقائك المقبولين. يبقى في ذاكرة الخادم 60 ثانية كحد أقصى ولا يُحفظ في أي قاعدة بيانات. لا يوجد سجل لمواقعك.',
+            '<strong>تنبيهات الأصدقاء القريبين (فقط إن فعّلتها):</strong> يرسل هاتفك أيضًا موقعًا تقريبيًا (بدقة نحو 100 متر) كلما تحرّكت بضع مئات من الأمتار، حتى وStoop مغلق. يحتفظ الخادم بآخر موقع فقط، لمدة 30 دقيقة كحد أقصى، ويستخدمه فقط ليخبرك أنت وصديقك أنكما على بعد 500 متر أو أقل. لا يراه أحد على الخريطة ولا يُحفظ في أي قاعدة بيانات.',
+            '<strong>الإشعارات:</strong> إن سمحت بها، رمز الإشعارات الذي تعطيه Apple لهاتفك، ويُستخدم فقط لإرسال إشعارات Stoop إليك (طلبات الصداقة وقبولها، وتنبيهات الأصدقاء القريبين إن فعّلتها). يُحذف عند تسجيل الخروج أو حذف الحساب.',
             '<strong>بيانات تقنية:</strong> عنوان IP وجلسات تسجيل الدخول، لحماية حسابك ومنع إساءة الاستخدام. هي عدّادات ورموز قصيرة العمر وليست ملفًا عنك.',
           ],
         ],
@@ -166,6 +172,7 @@ export function privacyPage(supportEmail: string): string {
         body: [
           [
             'لا يرى مكانك إلا الأصدقاء الذين قبلتهم (ولم يحظروك)، وفقط ما دمت خارج وضع الإخفاء.',
+            'عند تفعيل تنبيهات الأصدقاء القريبين، قد يصل إلى صديق يستخدمها أيضًا إشعار بأنك قريب. يذكر اسمك ولا يذكر مكانك.',
             'يستطيع أي مستخدم لـ Stoop رؤية اسم المستخدم والشخصية والتقييمات والتعليقات والصور التي تضيفها إلى مكان ما.',
             'من تحظرهم ومن يحظرونك لا يرى أحدهم الآخر في أي مكان في Stoop.',
           ],
@@ -174,7 +181,7 @@ export function privacyPage(supportEmail: string): string {
       {
         heading: 'الخدمات التي نستخدمها',
         body: [
-          'Apple (تسجيل الدخول بحساب Apple وخرائط Apple)، وGoogle (تسجيل دخول اختياري)، وRailway (استضافة الخوادم وقاعدة البيانات وتخزين الصور)، وResend (إرسال رموز الدخول إن استخدمت البريد). تعالج هذه الجهات البيانات لصالحنا فقط لتقديم هذه الخدمات.',
+          'Apple (تسجيل الدخول بحساب Apple وخرائط Apple والإشعارات)، وGoogle (تسجيل دخول اختياري)، وRailway (استضافة الخوادم وقاعدة البيانات وتخزين الصور)، وBrevo (إرسال رموز الدخول إن استخدمت البريد). تعالج هذه الجهات البيانات لصالحنا فقط لتقديم هذه الخدمات.',
         ],
       },
       {
@@ -182,8 +189,9 @@ export function privacyPage(supportEmail: string): string {
         body: [
           [
             'فعّل وضع الإخفاء لتختفي عن أصدقائك، أو أوقف الموقع لـ Stoop من إعدادات iOS.',
+            'تنبيهات الأصدقاء القريبين معطّلة حتى تفعّلها من إعدادات Stoop، ويمكنك إيقافها من هناك، أو إيقاف إشعارات Stoop من إعدادات iOS، في أي وقت.',
             'يمكنك تغيير اسم المستخدم والشخصية في أي وقت من التطبيق.',
-            'احذف حسابك من التطبيق: الملف الشخصي ثم <strong>حذف الحساب</strong>. يزيل ذلك تقييماتك وتعليقاتك وصورك وصداقاتك وحظرك وجلساتك، ويجعل حسابك مجهول الهوية. قد نحتفظ بالبلاغات التي أرسلتها أو التي قُدّمت ضدك لنحافظ على أمان Stoop.',
+            'احذف حسابك من التطبيق: الملف الشخصي ثم <strong>حذف الحساب</strong>. يزيل ذلك تقييماتك وتعليقاتك وصورك وصداقاتك وحظرك وجلساتك ورموز الإشعارات، ويجعل حسابك مجهول الهوية. قد نحتفظ بالبلاغات التي أرسلتها أو التي قُدّمت ضدك لنحافظ على أمان Stoop.',
             `يمكنك أيضًا طلب ذلك بالبريد: ${mail}.`,
           ],
         ],

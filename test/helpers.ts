@@ -10,6 +10,7 @@ import { GoogleVerifier, type GoogleIdentity } from '../src/auth/google-verifier
 import { Mailer, type Email } from '../src/mail/mailer.js';
 import { ApiError } from '../src/common/api-error.js';
 import { RedisService } from '../src/redis/redis.service.js';
+import { ApnsClient, type PushMessage, type PushResult, type PushTarget } from '../src/notifications/apns.client.js';
 
 /**
  * Treats the identity token as the Apple `sub`, so tests need no network and no Apple keys.
@@ -70,6 +71,32 @@ export class CapturingMailer extends Mailer {
 
 export const mailbox = new CapturingMailer();
 
+/** Records pushes instead of sending them. Tokens listed in `dead` answer like Apple does for removed apps. */
+export class FakeApnsClient extends ApnsClient {
+  enabled = true;
+  readonly sent: (PushMessage & { token: string })[] = [];
+  readonly dead = new Set<string>();
+
+  async send(target: PushTarget, message: PushMessage): Promise<PushResult> {
+    if (this.dead.has(target.token)) return 'unregistered';
+    this.sent.push({ ...message, token: target.token });
+    return 'sent';
+  }
+
+  /** Pushes to `token` of this kind, oldest first. */
+  to(token: string, kind?: string) {
+    return this.sent.filter((m) => m.token === token && (!kind || m.payload.kind === kind));
+  }
+
+  reset() {
+    this.sent.length = 0;
+    this.dead.clear();
+    this.enabled = true;
+  }
+}
+
+export const apns = new FakeApnsClient();
+
 export async function createTestApp(): Promise<INestApplication> {
   const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
     .overrideProvider(AppleVerifier)
@@ -80,6 +107,8 @@ export async function createTestApp(): Promise<INestApplication> {
     .useValue(mailbox)
     .overrideProvider(AppleTokenClient)
     .useValue(appleTokens)
+    .overrideProvider(ApnsClient)
+    .useValue(apns)
     .compile();
   const app = setupApp(moduleRef.createNestApplication());
   await app.init();
@@ -88,7 +117,17 @@ export async function createTestApp(): Promise<INestApplication> {
 
 /** Empties every table and Redis, so each test starts from nothing. */
 export async function resetState(app: INestApplication) {
-  await app.get(DataSource).query('TRUNCATE users, places RESTART IDENTITY CASCADE');
+  // background work from the previous test (the nearby check after a live position, a friend-list
+  // refresh) can still be reading these tables; Postgres then cancels one side as a deadlock
+  for (let attempt = 1; ; attempt++) {
+    try {
+      await app.get(DataSource).query('TRUNCATE users, places RESTART IDENTITY CASCADE');
+      break;
+    } catch (err) {
+      if ((err as { code?: string }).code !== '40P01' || attempt === 3) throw err;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+  }
   await app.get(RedisService).client.flushdb();
 }
 

@@ -46,6 +46,10 @@ export class User {
   @Column({ name: 'ghost_mode', type: 'boolean', default: false })
   ghostMode: boolean;
 
+  /** Whether this person wants a push when a friend is nearby (and lets the app report position in the background). */
+  @Column({ name: 'nearby_alerts', type: 'boolean', default: false })
+  nearbyAlerts: boolean;
+
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;
 

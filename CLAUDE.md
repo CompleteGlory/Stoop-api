@@ -8,7 +8,7 @@ A one-screen iOS MapKit app: friends see each other move on a map (Snapchat-map 
 
 - Backend: spec milestones 1–5 are done, tested and **deployed** at `https://place-rating-api-production.up.railway.app` (Railway project `wholesome-perfection`: services `place-rating-api`, `PostGIS`, `Redis`, bucket `shelved-wrap`). Every push to `main` redeploys.
 - iOS app (Stoop, repo `place-rating-ios`, GitHub `CompleteGlory/Stoop`): milestones 6–8 are built (sign-in, map, places and ratings, photos, friends, live socket, safety, settings). Milestone 9 has account deletion with Apple revocation, shared place links, a README with diagrams and a TestFlight workflow; still owed: README screenshots and a two-phone TestFlight check. Start with `docs/ios-app-brief.md`.
-- Shared place links (`/p/:id`) open the app only once `APPLE_TEAM_ID` is set on Railway; Apple revocation needs `APPLE_KEY_ID` and `APPLE_PRIVATE_KEY` there too.
+- Shared place links (`/p/:id`) open the app only once `APPLE_TEAM_ID` is set on Railway; Apple revocation needs `APPLE_KEY_ID` and `APPLE_PRIVATE_KEY` there too, and push notifications (friend requests, accepts, opt-in nearby friends) need `APNS_KEY_ID` and `APNS_PRIVATE_KEY`.
 - Production has **no dev sign-in**. `APPLE_BUNDLE_ID` on Railway is the app's real bundle id, `com.magdzaky.PlaceRating`. For development run the backend locally (below).
 
 ## Docs: read before working on the matching area
@@ -56,14 +56,14 @@ docs/                          the docs above
 ## Rules that must not break
 
 1. Every error is `{ "error": { "code", "message" } }`; throw `ApiError.*`, keep codes stable and document new ones in `docs/api-contract.md`. The HTML pages people open in a browser (`/p/:id`, `/terms`, `/privacy`) are the only exception.
-2. Live location lives only in Redis with a 60 s expiry. Never write it to Postgres, never keep history, never log coordinates.
+2. Live location lives only in Redis with a 60 s expiry. Never write it to Postgres, never keep history, never log coordinates. The one other position is the opt-in background report for nearby alerts (`near:{userId}`): Redis only, latest only, rounded to about 110 m, 30 min expiry, compared with friends' positions and never sent to anyone.
 3. Only accepted, non-blocked friends see each other, and only while the sender is not in ghost mode. Blocks hide both people everywhere.
 4. A rating write locks the place row, upserts the rating and recomputes the place average in one transaction. `PUT /places/:id/rating` stays idempotent.
 5. Clients can create places but never change or delete them.
 6. `DEV_AUTH_ENABLED` must never be on in production (the config refuses to boot). No secrets in git; `.env` is ignored.
 7. The bucket stays private. Place photos are re-encoded (at most 1600 px, plus a 400 px thumbnail, EXIF stripped) before they are served. Avatars are DiceBear characters: the app draws them, the server only stores and validates `{style, options}` against the pinned DiceBear version (9.4.3, same as the app).
 8. One live connection per user, and one API instance (live fan-out is in memory).
-9. Account deletion anonymises the user row and removes ratings, friendships, blocks, sessions and their place photos (rows and files), then recomputes averages.
+9. Account deletion anonymises the user row and removes ratings, friendships, blocks, sessions, push devices and their place photos (rows and files), then recomputes averages.
 10. A username is mandatory: without one, only `/me` and `/users/availability` work (`403 username_required`) and `/live` refuses the upgrade. A username can change but never be cleared.
 11. Passwords are scrypt hashes and email codes are SHA-256 hashes; neither, nor a code, is ever logged or returned (`MAIL_PROVIDER=log` is development only, refused in production). Sign-up, resend and forgot always answer the same, so they never reveal which emails have accounts. Accounts link only through a *verified* email; Apple relay addresses never link.
 
@@ -87,4 +87,4 @@ Magd is an experienced Flutter/NestJS developer new to native iOS. Explain Swift
 
 ## Known gaps
 
-Apple token revocation is off until `APPLE_KEY_ID`/`APPLE_PRIVATE_KEY` are set on Railway, no CI, no admin UI for reports, single API instance only, unconfirmed photo uploads are never cleaned up. Details in `docs/operations.md`.
+Apple token revocation is off until `APPLE_KEY_ID`/`APPLE_PRIVATE_KEY` are set on Railway, push notifications are off until `APNS_KEY_ID`/`APNS_PRIVATE_KEY` are, no CI, no admin UI for reports, single API instance only, unconfirmed photo uploads are never cleaned up. Details in `docs/operations.md`.

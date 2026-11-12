@@ -38,6 +38,8 @@ Apple settings beyond the bundle id:
 
 - `APPLE_TEAM_ID` (the 10-character team id, `W4D7HW9L4Y`) turns on universal links: the API serves `/.well-known/apple-app-site-association` so shared place links open in the app.
 - `APPLE_KEY_ID` and `APPLE_PRIVATE_KEY` turn on token revocation, which App Review expects. Create a key with Sign in with Apple enabled under Certificates, Identifiers & Profiles > Keys and paste the `.p8` contents (one line with `\n` works). With them, `POST /auth/apple` exchanges the app's `authorizationCode` for an Apple refresh token, and `DELETE /me` revokes it. Without them both steps are skipped. A failure is logged as a warning and never blocks sign-in or deletion. Accounts that signed in before the key was set have no stored token; they get one at their next sign-in.
+- `APNS_KEY_ID` and `APNS_PRIVATE_KEY` turn on push notifications (friend requests, accepts, nearby friends); they need `APPLE_TEAM_ID` too. Create a key under Certificates, Identifiers & Profiles > Keys with **Apple Push Notifications service (APNs)** enabled (one key can have both APNs and Sign in with Apple; then the same id and `.p8` go in both pairs) and paste the `.p8` contents. The topic is `APPLE_BUNDLE_ID`. The same key works for the sandbox (Xcode builds) and production (TestFlight, App Store); each device says which it is. Without the key devices still register and nothing is sent. APNs failures are logged as `APNs answered <status> (<reason>)`, never with the token.
+- `NEARBY_RADIUS_M` (500), `NEARBY_COOLDOWN_SEC` (10800) and `NEARBY_POSITION_TTL_SEC` (1800) tune the nearby alerts; the defaults are what the app's settings text promises, so change them together.
 
 ## Local development
 

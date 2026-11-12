@@ -11,6 +11,7 @@ import { LegalModule } from './legal/legal.module.js';
 import { ShareModule } from './share/share.module.js';
 import { LiveModule } from './live/live.module.js';
 import { ModerationModule } from './moderation/moderation.module.js';
+import { NotificationsModule } from './notifications/notifications.module.js';
 import { PhotosModule } from './photos/photos.module.js';
 import { PlacesModule } from './places/places.module.js';
 import { RedisModule } from './redis/redis.module.js';
@@ -38,6 +39,7 @@ function flatten(errors: ValidationError[], prefix = ''): string[] {
     SocialModule,
     ModerationModule,
     LiveModule,
+    NotificationsModule,
     HealthModule,
     LegalModule,
     ShareModule,

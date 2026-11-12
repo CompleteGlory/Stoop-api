@@ -23,6 +23,19 @@ export interface AppConfig {
     /** The Sign in with Apple key from the developer account, used to revoke tokens on deletion. null = off. */
     signInKey: { teamId: string; keyId: string; privateKey: string } | null;
   };
+  /**
+   * Apple push notifications (APNs). The key is a .p8 from the developer account with APNs enabled
+   * (it can be the Sign in with Apple key when that one has APNs too). null = pushes are off.
+   */
+  apns: { teamId: string; keyId: string; privateKey: string } | null;
+  nearby: {
+    /** Friends closer than this (metres) get a "nearby" push. */
+    radiusM: number;
+    /** The same two friends are alerted at most once per this many seconds. */
+    cooldownSec: number;
+    /** How long a background position report is kept in Redis for the nearby check. */
+    positionTtlSec: number;
+  };
   /** Enables `POST /auth/dev`, a sign-in that skips Apple. Never allowed in production. */
   devAuthEnabled: boolean;
   google: {
@@ -148,6 +161,19 @@ export function loadConfig(env: Env = process.env): AppConfig {
             }
           : null,
     },
+    apns:
+      env.APPLE_TEAM_ID && env.APNS_KEY_ID && env.APNS_PRIVATE_KEY
+        ? {
+            teamId: env.APPLE_TEAM_ID.trim(),
+            keyId: env.APNS_KEY_ID.trim(),
+            privateKey: env.APNS_PRIVATE_KEY.replace(/\\n/g, '\n').trim(),
+          }
+        : null,
+    nearby: {
+      radiusM: int(env.NEARBY_RADIUS_M, 500),
+      cooldownSec: int(env.NEARBY_COOLDOWN_SEC, 3 * 3600),
+      positionTtlSec: int(env.NEARBY_POSITION_TTL_SEC, 30 * 60),
+    },
     devAuthEnabled,
     google: {
       clientIds: (env.GOOGLE_CLIENT_IDS ?? '').split(',').map((id) => id.trim()).filter(Boolean),
@@ -185,6 +211,13 @@ export function loadConfig(env: Env = process.env): AppConfig {
   if (!config.s3.publicBaseUrl) problems.push('PUBLIC_BASE_URL is required');
   if (Boolean(env.APPLE_KEY_ID) !== Boolean(env.APPLE_PRIVATE_KEY) || (env.APPLE_KEY_ID && !env.APPLE_TEAM_ID)) {
     problems.push('APPLE_KEY_ID and APPLE_PRIVATE_KEY go together and need APPLE_TEAM_ID');
+  }
+  if (Boolean(env.APNS_KEY_ID) !== Boolean(env.APNS_PRIVATE_KEY) || (env.APNS_KEY_ID && !env.APPLE_TEAM_ID)) {
+    problems.push('APNS_KEY_ID and APNS_PRIVATE_KEY go together and need APPLE_TEAM_ID');
+  }
+  const { radiusM, cooldownSec, positionTtlSec } = config.nearby;
+  if (!(radiusM > 0) || !(cooldownSec > 0) || !(positionTtlSec > 0)) {
+    problems.push('NEARBY_* settings must be positive integers');
   }
   if (config.apple.teamId && !/^[A-Z0-9]{10}$/.test(config.apple.teamId)) {
     problems.push('APPLE_TEAM_ID must be the 10-character team id');

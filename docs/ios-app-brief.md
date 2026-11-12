@@ -88,6 +88,12 @@ extension JSONDecoder {
 - Friends dictionary: `hello` replaces, `loc` upserts, `gone` removes; a one-second ticker dims markers older than 30 s and drops those older than 60 s.
 - Ghost toggle: send the `ghost` frame (or `PATCH /me {ghostMode}`) and trust the server's `ghost` confirmation; the "Sharing with N friends / Ghost mode on" pill always reflects it.
 
+## Push notifications and nearby alerts
+
+- `PushRegistrar` asks for notification permission the first time the friends list opens (or from Settings), then `PUT /me/devices/:token` with `environment` `sandbox` in Debug and `production` otherwise. Sign-out calls `DELETE /me/devices/:token` before `/auth/logout`. The `aps-environment` entitlement and an APNs key on the server (`APNS_KEY_ID`, `APNS_PRIVATE_KEY`) are both needed; see `operations.md`.
+- The server sends `loc-key` texts (`api-contract.md`, "Push notifications"), so their English keys and Arabic translations must stay in `Localizable.xcstrings`; the in-app language is mirrored to `AppleLanguages` so iOS words them in the language the app shows. A tap reads `kind` and `userId` and becomes a `DeepLink` (`.friends`, `.friend(id)`).
+- "Nearby friends" in Settings: notifications first, then `PATCH /me {nearbyAlerts: true}`, then `NearbyReporter` starts significant-location monitoring and asks for **Always** (`NSLocationAlwaysAndWhenInUseUsageDescription`). Each move posts `POST /me/position`; a `409 nearby_alerts_off` stops it. The app delegate restarts monitoring at launch, because iOS relaunches the app in the background for a move.
+
 ## Milestones (from the spec) as concrete steps
 
 **6. Map shell**, done when it runs on a real device with fake friends moving: project and `AppConfig`; `Map` with your own pulsing avatar; location permission flow and the denied banner; floating controls and the status pill; bottom sheet with the Browse/Place/Profile states; `MockLiveSocket` driving friend annotations; `MapViewModel` tests with fakes.

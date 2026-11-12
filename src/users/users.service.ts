@@ -20,6 +20,7 @@ const RESERVED_USERNAMES = new Set([
 
 export interface SelfUserDto extends PublicUserDto {
   ghostMode: boolean;
+  nearbyAlerts: boolean;
   createdAt: string;
 }
 
@@ -54,6 +55,7 @@ export class UsersService {
       displayName: user.displayName,
       avatar: this.mapper.avatar(user.avatarStyle, user.avatarOptions),
       ghostMode: user.ghostMode,
+      nearbyAlerts: user.nearbyAlerts,
       createdAt: user.createdAt.toISOString(),
     };
   }
@@ -80,6 +82,7 @@ export class UsersService {
     }
     if (dto.displayName !== undefined) patch.displayName = dto.displayName;
     if (dto.ghostMode !== undefined) patch.ghostMode = dto.ghostMode;
+    if (dto.nearbyAlerts !== undefined) patch.nearbyAlerts = dto.nearbyAlerts;
     if (dto.avatar !== undefined) {
       const character = validateCharacter(dto.avatar);
       patch.avatarStyle = character.style;
@@ -98,13 +101,16 @@ export class UsersService {
       if (patch.ghostMode !== undefined && patch.ghostMode !== user.ghostMode) {
         this.events.emit({ type: 'ghost-changed', userId: id, on: patch.ghostMode });
       }
+      if (patch.nearbyAlerts === false && user.nearbyAlerts) {
+        this.events.emit({ type: 'nearby-alerts-off', userId: id });
+      }
     }
     return this.getSelf(id);
   }
 
   /**
    * Deletes the account the way App Review expects: the person's ratings,
-   * friendships, blocks, sessions and place photos go, and the row is anonymised. Reports
+   * friendships, blocks, sessions, push devices and place photos go, and the row is anonymised. Reports
    * about or by them stay so moderation history is not lost.
    */
   async deleteSelf(id: string): Promise<void> {
@@ -127,6 +133,7 @@ export class UsersService {
       await m.query(`DELETE FROM friendships WHERE requester_id = $1 OR addressee_id = $1`, [id]);
       await m.query(`DELETE FROM blocks WHERE blocker_id = $1 OR blocked_id = $1`, [id]);
       await m.query(`DELETE FROM refresh_tokens WHERE user_id = $1`, [id]);
+      await m.query(`DELETE FROM push_devices WHERE user_id = $1`, [id]);
       if (user.email) await m.query(`DELETE FROM email_codes WHERE email = $1`, [user.email]);
       // TypeORM answers a DELETE ... RETURNING with [rows, affected count]
       const [photos]: [{ object_key: string; thumb_key: string }[], number] = await m.query(
@@ -136,7 +143,7 @@ export class UsersService {
       await m.query(
         `UPDATE users
             SET deleted_at = now(), apple_sub = NULL, username = NULL, display_name = 'Deleted user',
-                avatar_style = NULL, avatar_options = NULL, ghost_mode = true,
+                avatar_style = NULL, avatar_options = NULL, ghost_mode = true, nearby_alerts = false,
                 email = NULL, email_verified_at = NULL, password_hash = NULL, google_sub = NULL,
                 apple_refresh_token = NULL
           WHERE id = $1`,

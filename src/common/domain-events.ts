@@ -5,6 +5,14 @@ export type DomainEvent =
   /** Friendships or blocks between these users changed; live connections must recompute who can see whom. */
   | { type: 'relations-changed'; userIds: string[] }
   | { type: 'ghost-changed'; userId: string; on: boolean }
+  /** The person switched "a friend is nearby" alerts off: forget their background position. */
+  | { type: 'nearby-alerts-off'; userId: string }
+  /** `fromId` sent `toId` a new friend request. */
+  | { type: 'friend-requested'; fromId: string; toId: string }
+  /** `byId` accepted the request `requesterId` had sent. */
+  | { type: 'friend-accepted'; byId: string; requesterId: string }
+  /** A live (socket) position came in. Stays in process; coordinates are never logged. */
+  | { type: 'live-position'; userId: string; lat: number; lng: number }
   /** `friendIds` are the friends the user had before deletion, so they can be told the marker is gone. */
   | { type: 'user-deleted'; userId: string; friendIds: string[] }
   /** A deleted account had signed in with Apple: its Apple token should be revoked. */
