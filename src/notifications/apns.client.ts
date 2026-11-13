@@ -1,7 +1,7 @@
 import { Inject, Injectable, Logger, type OnModuleDestroy } from '@nestjs/common';
 import { importPKCS8, SignJWT, type CryptoKey } from 'jose';
 import { connect, type ClientHttp2Session } from 'node:http2';
-import { APP_CONFIG, type AppConfig } from '../config/app-config.js';
+import { APP_CONFIG, type ApnsKey, type AppConfig } from '../config/app-config.js';
 import type { PushEnvironment } from '../db/entities/push-device.entity.js';
 
 export interface PushTarget {
@@ -37,25 +37,33 @@ const HOSTS: Record<PushEnvironment, string> = {
 const PROVIDER_TOKEN_TTL_MS = 45 * 60 * 1000;
 const DEAD_TOKEN_REASONS = new Set(['BadDeviceToken', 'DeviceTokenNotForTopic', 'Unregistered']);
 
-/** APNs over HTTP/2 with token (.p8 key) authentication; one kept-open connection per environment. */
+/**
+ * APNs over HTTP/2 with token (.p8 key) authentication. Each environment has its own kept-open
+ * connection and its own key: Apple refuses a connection that mixes keys from two environments.
+ */
 @Injectable()
 export class Http2ApnsClient extends ApnsClient implements OnModuleDestroy {
   private readonly logger = new Logger(ApnsClient.name);
   private readonly sessions = new Map<PushEnvironment, ClientHttp2Session>();
-  private providerToken?: { value: string; at: number };
-  private key?: Promise<CryptoKey>;
+  private readonly providerTokens = new Map<PushEnvironment, { value: string; at: number }>();
+  private readonly keys = new Map<PushEnvironment, Promise<CryptoKey>>();
 
   constructor(@Inject(APP_CONFIG) private readonly config: AppConfig) {
     super();
   }
 
   get enabled(): boolean {
-    return this.config.apns !== null;
+    return this.config.apns.production !== null || this.config.apns.sandbox !== null;
+  }
+
+  private keyFor(environment: PushEnvironment): ApnsKey | null {
+    return this.config.apns[environment];
   }
 
   async send(target: PushTarget, message: PushMessage): Promise<PushResult> {
-    if (!this.config.apns) return 'failed';
-    const token = await this.authToken();
+    // no key for this device's environment (say, an Xcode build while only production is set up)
+    if (!this.keyFor(target.environment)) return 'failed';
+    const token = await this.authToken(target.environment);
     const headers: Record<string, string> = {
       ':method': 'POST',
       ':path': `/3/device/${target.token}`,
@@ -72,8 +80,8 @@ export class Http2ApnsClient extends ApnsClient implements OnModuleDestroy {
     const { status, reason } = await this.post(target.environment, headers, JSON.stringify(message.payload));
     if (status === 200) return 'sent';
     if (status === 410 || (status === 400 && DEAD_TOKEN_REASONS.has(reason))) return 'unregistered';
-    if (status === 403 && reason === 'ExpiredProviderToken') this.providerToken = undefined;
-    this.logger.warn(`APNs answered ${status || 'no response'}${reason ? ` (${reason})` : ''}`);
+    if (status === 403 && reason === 'ExpiredProviderToken') this.providerTokens.delete(target.environment);
+    this.logger.warn(`APNs ${target.environment} answered ${status || 'no response'}${reason ? ` (${reason})` : ''}`);
     return 'failed';
   }
 
@@ -126,18 +134,23 @@ export class Http2ApnsClient extends ApnsClient implements OnModuleDestroy {
     return session;
   }
 
-  /** The provider token: an ES256 JWT signed with the APNs key, reused for 45 minutes. */
-  async authToken(now = Date.now()): Promise<string> {
-    const apns = this.config.apns;
-    if (!apns) throw new Error('APNs key is not configured');
-    if (this.providerToken && now - this.providerToken.at < PROVIDER_TOKEN_TTL_MS) return this.providerToken.value;
-    this.key ??= importPKCS8(apns.privateKey, 'ES256');
+  /** The provider token: an ES256 JWT signed with that environment's APNs key, reused for 45 minutes. */
+  async authToken(environment: PushEnvironment, now = Date.now()): Promise<string> {
+    const apns = this.keyFor(environment);
+    if (!apns) throw new Error(`No APNs key is configured for ${environment}`);
+    const cached = this.providerTokens.get(environment);
+    if (cached && now - cached.at < PROVIDER_TOKEN_TTL_MS) return cached.value;
+    let key = this.keys.get(environment);
+    if (!key) {
+      key = importPKCS8(apns.privateKey, 'ES256');
+      this.keys.set(environment, key);
+    }
     const value = await new SignJWT({})
       .setProtectedHeader({ alg: 'ES256', kid: apns.keyId })
       .setIssuer(apns.teamId)
       .setIssuedAt(Math.floor(now / 1000))
-      .sign(await this.key);
-    this.providerToken = { value, at: now };
+      .sign(await key);
+    this.providerTokens.set(environment, { value, at: now });
     return value;
   }
 }

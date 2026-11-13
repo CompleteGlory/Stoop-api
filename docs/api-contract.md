@@ -161,7 +161,7 @@ What is sent:
 
 The payload is `{aps: {alert: {title-loc-key, loc-key, loc-args}, sound: "default", thread-id: "friends" | "nearby"}, kind, userId}`, where `userId` is the other person (open their marker or the friends list on tap). The same kind from the same person replaces the previous notification (`apns-collapse-id`).
 
-Nearby rules: two accepted, non-blocked friends, neither in ghost mode, whose latest positions (a live socket `loc`, or a background report from the last 30 minutes) are within 500 m. Each person is checked at most once a minute, and one pair is alerted at most once every 3 hours. A person with `nearbyAlerts` off still counts as a position while their app is open and sharing (their friends see them on the map then anyway), but gets no nearby pushes and sends no background reports. Pushes are best effort: nothing is sent while the APNs key is not configured, and tokens Apple reports as dead are deleted.
+Nearby rules: two accepted, non-blocked friends, neither in ghost mode, whose latest positions (a live socket `loc`, or a background report from the last 30 minutes) are within 500 m. Each person is checked at most once a minute, and one pair is alerted at most once every 24 hours. A person with `nearbyAlerts` off still counts as a position while their app is open and sharing (their friends see them on the map then anyway), but gets no nearby pushes and sends no background reports. Pushes are best effort: nothing is sent while the APNs key is not configured, and tokens Apple reports as dead are deleted.
 
 ## Reports
 

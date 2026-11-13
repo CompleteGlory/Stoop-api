@@ -3,6 +3,12 @@ export const APP_CONFIG = Symbol('APP_CONFIG');
 const mailProviders = ['log', 'resend', 'brevo'] as const;
 export type MailProvider = (typeof mailProviders)[number];
 
+export interface ApnsKey {
+  teamId: string;
+  keyId: string;
+  privateKey: string;
+}
+
 export interface AppConfig {
   nodeEnv: 'development' | 'test' | 'production';
   port: number;
@@ -24,10 +30,12 @@ export interface AppConfig {
     signInKey: { teamId: string; keyId: string; privateKey: string } | null;
   };
   /**
-   * Apple push notifications (APNs). The key is a .p8 from the developer account with APNs enabled
-   * (it can be the Sign in with Apple key when that one has APNs too). null = pushes are off.
+   * Apple push notifications (APNs): .p8 keys from the developer account with APNs enabled. Apple's keys
+   * work in one environment each, so there is one for production (TestFlight and App Store builds) and
+   * one for the sandbox (builds run from Xcode). Without a sandbox key the production key is tried for
+   * sandbox devices too, which works for older keys that cover both. Both null = pushes are off.
    */
-  apns: { teamId: string; keyId: string; privateKey: string } | null;
+  apns: { production: ApnsKey | null; sandbox: ApnsKey | null };
   nearby: {
     /** Friends closer than this (metres) get a "nearby" push. */
     radiusM: number;
@@ -161,17 +169,15 @@ export function loadConfig(env: Env = process.env): AppConfig {
             }
           : null,
     },
-    apns:
-      env.APPLE_TEAM_ID && env.APNS_KEY_ID && env.APNS_PRIVATE_KEY
-        ? {
-            teamId: env.APPLE_TEAM_ID.trim(),
-            keyId: env.APNS_KEY_ID.trim(),
-            privateKey: env.APNS_PRIVATE_KEY.replace(/\\n/g, '\n').trim(),
-          }
-        : null,
+    apns: {
+      production: apnsKey(env.APPLE_TEAM_ID, env.APNS_KEY_ID, env.APNS_PRIVATE_KEY),
+      sandbox:
+        apnsKey(env.APPLE_TEAM_ID, env.APNS_SANDBOX_KEY_ID, env.APNS_SANDBOX_PRIVATE_KEY) ??
+        apnsKey(env.APPLE_TEAM_ID, env.APNS_KEY_ID, env.APNS_PRIVATE_KEY),
+    },
     nearby: {
       radiusM: int(env.NEARBY_RADIUS_M, 500),
-      cooldownSec: int(env.NEARBY_COOLDOWN_SEC, 3 * 3600),
+      cooldownSec: int(env.NEARBY_COOLDOWN_SEC, 24 * 3600),
       positionTtlSec: int(env.NEARBY_POSITION_TTL_SEC, 30 * 60),
     },
     devAuthEnabled,
@@ -215,6 +221,12 @@ export function loadConfig(env: Env = process.env): AppConfig {
   if (Boolean(env.APNS_KEY_ID) !== Boolean(env.APNS_PRIVATE_KEY) || (env.APNS_KEY_ID && !env.APPLE_TEAM_ID)) {
     problems.push('APNS_KEY_ID and APNS_PRIVATE_KEY go together and need APPLE_TEAM_ID');
   }
+  if (
+    Boolean(env.APNS_SANDBOX_KEY_ID) !== Boolean(env.APNS_SANDBOX_PRIVATE_KEY) ||
+    (env.APNS_SANDBOX_KEY_ID && !env.APPLE_TEAM_ID)
+  ) {
+    problems.push('APNS_SANDBOX_KEY_ID and APNS_SANDBOX_PRIVATE_KEY go together and need APPLE_TEAM_ID');
+  }
   const { radiusM, cooldownSec, positionTtlSec } = config.nearby;
   if (!(radiusM > 0) || !(cooldownSec > 0) || !(positionTtlSec > 0)) {
     problems.push('NEARBY_* settings must be positive integers');
@@ -244,6 +256,12 @@ export function loadConfig(env: Env = process.env): AppConfig {
     throw new Error(`Invalid configuration:\n- ${problems.join('\n- ')}`);
   }
   return config;
+}
+
+function apnsKey(teamId?: string, keyId?: string, privateKey?: string): ApnsKey | null {
+  if (!teamId || !keyId || !privateKey) return null;
+  // hosts often store the .p8 file on one line with literal \n
+  return { teamId: teamId.trim(), keyId: keyId.trim(), privateKey: privateKey.replace(/\\n/g, '\n').trim() };
 }
 
 /** Splits `Stoop <a@b.c>` (or a bare `a@b.c`) into name and address; null when it isn't one. */

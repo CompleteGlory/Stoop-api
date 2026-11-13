@@ -28,7 +28,7 @@ Places and ratings are handled with raw SQL (PostGIS, `FOR UPDATE`, aggregate re
 | `loc:{userId}` | JSON `{lat, lng, accuracy, heading, ts}`, the only copy of a live position | 60 s, refreshed by each accepted `loc`, deleted on disconnect/ghost/deletion |
 | `near:{userId}` | JSON `{lat, lng, ts}` rounded to 3 decimals, the latest background position, only for the nearby check and never sent to anyone | 30 min, replaced by each report; deleted on ghost, alerts off and deletion; only written while `nearby_alerts` is on |
 | `nearby-check:{userId}` | `1`; the nearby check for this person ran in the last minute | 60 s |
-| `nearby-pair:{idA}:{idB}` | `1` (ids sorted); these two were told they are near each other | 3 h |
+| `nearby-pair:{idA}:{idB}` | `1` (ids sorted); these two were told they are near each other | 24 h |
 | `rl:{what}:{userId or auth:ip}` | fixed-window rate-limit counter | the window (1 min, 1 h or 1 day) |
 | `revoked:user:{userId}` | `1`; makes access tokens of a deleted user fail | access-token TTL + 60 s |
 

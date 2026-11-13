@@ -175,7 +175,11 @@ describe('push notifications', () => {
       expect(apns.to(b.device, 'nearby').map((m) => m.payload.userId)).toEqual([a.id]);
       expect(apns.to(a.device, 'nearby')[0].payload.aps).toMatchObject({ 'thread-id': 'nearby' });
 
-      // the cooldown keeps the same pair quiet
+      // the cooldown keeps the same pair quiet for a day
+      const [low, high] = [a.id, b.id].sort();
+      const quietFor = await app.get(RedisService).client.ttl(`nearby-pair:${low}:${high}`);
+      expect(quietFor).toBeGreaterThan(86_000);
+      expect(quietFor).toBeLessThanOrEqual(86_400);
       await allowCheck(b);
       await report(b, home).expect(204);
       await settle();

@@ -131,8 +131,8 @@ describe('loadConfig', () => {
 
   it('turns pushes on only with the APNs key, and defaults the nearby alerts', () => {
     const off = loadConfig(valid);
-    expect(off.apns).toBeNull();
-    expect(off.nearby).toEqual({ radiusM: 500, cooldownSec: 10_800, positionTtlSec: 1800 });
+    expect(off.apns).toEqual({ production: null, sandbox: null });
+    expect(off.nearby).toEqual({ radiusM: 500, cooldownSec: 86_400, positionTtlSec: 1800 });
 
     const on = loadConfig({
       ...valid,
@@ -140,7 +140,30 @@ describe('loadConfig', () => {
       APNS_KEY_ID: 'PUSH123456',
       APNS_PRIVATE_KEY: 'line1\\nline2',
     }).apns;
-    expect(on).toEqual({ teamId: 'ABCDE12345', keyId: 'PUSH123456', privateKey: 'line1\nline2' });
+    const production = { teamId: 'ABCDE12345', keyId: 'PUSH123456', privateKey: 'line1\nline2' };
+    // without a sandbox key, sandbox devices are tried with the production key (older keys cover both)
+    expect(on).toEqual({ production, sandbox: production });
+
+    const both = loadConfig({
+      ...valid,
+      APPLE_TEAM_ID: 'ABCDE12345',
+      APNS_KEY_ID: 'PUSH123456',
+      APNS_PRIVATE_KEY: 'line1\\nline2',
+      APNS_SANDBOX_KEY_ID: 'SAND123456',
+      APNS_SANDBOX_PRIVATE_KEY: 'sand1\\nsand2',
+    }).apns;
+    expect(both.sandbox).toEqual({ teamId: 'ABCDE12345', keyId: 'SAND123456', privateKey: 'sand1\nsand2' });
+    expect(both.production).toEqual(production);
+
+    const sandboxOnly = loadConfig({
+      ...valid,
+      APPLE_TEAM_ID: 'ABCDE12345',
+      APNS_SANDBOX_KEY_ID: 'SAND123456',
+      APNS_SANDBOX_PRIVATE_KEY: 'x',
+    }).apns;
+    expect(sandboxOnly.production).toBeNull();
+    expect(sandboxOnly.sandbox?.keyId).toBe('SAND123456');
+    expect(() => loadConfig({ ...valid, APPLE_TEAM_ID: 'ABCDE12345', APNS_SANDBOX_KEY_ID: 'S' })).toThrow(/APNS_SANDBOX/);
 
     expect(() => loadConfig({ ...valid, APNS_KEY_ID: 'PUSH123456', APNS_PRIVATE_KEY: 'x' })).toThrow(/APNS_KEY_ID/);
     expect(() => loadConfig({ ...valid, APPLE_TEAM_ID: 'ABCDE12345', APNS_KEY_ID: 'P' })).toThrow(/go together/);

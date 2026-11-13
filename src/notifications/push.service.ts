@@ -85,6 +85,8 @@ export class PushService implements OnModuleInit, OnModuleDestroy {
     await Promise.all(
       devices.map(async (device) => {
         const result = await this.apns.send(device, message);
+        // no token and no person: just enough to see in the log that a push went out
+        this.logger.debug(`${String(message.payload.kind)} push to a ${device.environment} device: ${result}`);
         if (result === 'unregistered') await this.devices.delete({ token: device.token, userId });
       }),
     );
