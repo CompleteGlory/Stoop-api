@@ -262,6 +262,24 @@ describe('live location socket', () => {
   });
 
   describe('changes to friendships', () => {
+    it('tells both open apps to reload their friends lists when a request is sent or cancelled', async () => {
+      const alice = await signUp(app, 'alice');
+      const bob = await signUp(app, 'bobby');
+      const a = await connect(alice);
+      const b = await connect(bob);
+
+      await api().post('/friends/requests').set(alice.auth).send({ userId: bob.id }).expect(200);
+      await b.client.next('friends');
+      await a.client.next('friends');
+
+      // alice changes her mind: bob's incoming request must disappear without a restart
+      await api().delete(`/friends/${bob.id}`).set(alice.auth).expect(204);
+      await b.client.next('friends');
+      await a.client.next('friends');
+      const list = await api().get('/friends').set(bob.auth).expect(200);
+      expect(list.body.incoming).toEqual([]);
+    });
+
     it('shows new friends their positions right away', async () => {
       const alice = await signUp(app, 'alice');
       const bob = await signUp(app, 'bobby');

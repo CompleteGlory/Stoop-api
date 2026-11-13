@@ -20,6 +20,7 @@ Every frame is a JSON text message `{ "t": "<type>", "d": { ... } }`. Frames ove
 | server → client | `loc` | `{ userId, lat, lng, accuracy, heading, ts }` | A friend moved (or just became visible) |
 | server → client | `gone` | `{ userId }` | Remove that marker: they disconnected, went ghost, removed or blocked you, or deleted their account |
 | server → client | `ghost` | `{ on }` | Confirms your ghost setting (also sent when you change it through `PATCH /me`) |
+| server → client | `friends` | `{}` | Your friends list or friend requests changed (a request sent to you or by you, cancelled, declined or accepted, a friend removed, a block). Reload `GET /friends`; nothing else is in the frame |
 | server → client | `error` | `{ code, message }` | Your last frame was rejected. Codes: `invalid_loc`, `accuracy_too_low`, `invalid_ghost` |
 
 Unknown or unparseable frames are dropped silently. WebSocket-level ping frames come from the server every 20 s; `URLSessionWebSocketTask` answers them automatically, so no app-level ping is needed. A socket that misses a ping interval is terminated.

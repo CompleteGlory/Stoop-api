@@ -139,7 +139,7 @@ Upload recipe: (1) `POST upload-url` with the exact byte count of the file; (2) 
 | `POST /blocks` `{userId}` | `204`. Also removes any friendship or request between you. `400 invalid_target`, `404 not_found` |
 | `DELETE /blocks/:userId` | `204`. Does not restore the friendship |
 
-Friend changes and blocks take effect on a connected live socket immediately (people appear or get a `gone` frame).
+Friend changes and blocks take effect on a connected live socket immediately (people appear or get a `gone` frame). Both people's open apps also get a `friends` frame for every request sent, cancelled, declined or accepted, every removal and every block, so their lists can reload without waiting (live-protocol.md).
 
 ## Push notifications
 

@@ -7,6 +7,7 @@
  *                    loc    { userId, lat, lng, accuracy, heading, ts }
  *                    gone   { userId }
  *                    ghost  { on }      (confirms a ghost change)
+ *                    friends {}         (your friends or friend requests changed: reload GET /friends)
  *                    error  { code, message }
  */
 export interface LocPayload {

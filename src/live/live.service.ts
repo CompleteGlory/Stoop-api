@@ -223,7 +223,13 @@ export class LiveService implements OnModuleInit, OnModuleDestroy {
   private async onDomainEvent(event: DomainEvent) {
     switch (event.type) {
       case 'relations-changed':
+        // requests answered, cancelled or declined, friends removed, blocks: lists change on both sides
+        for (const id of event.userIds) this.notifyFriendsChanged(id);
         await Promise.all(event.userIds.map((id) => this.refreshFriends(id)));
+        break;
+      case 'friend-requested':
+        this.notifyFriendsChanged(event.toId);
+        this.notifyFriendsChanged(event.fromId);
         break;
       case 'ghost-changed': {
         const conn = this.byUser.get(event.userId);
@@ -236,6 +242,12 @@ export class LiveService implements OnModuleInit, OnModuleDestroy {
       default:
         break; // handled elsewhere
     }
+  }
+
+  /** Tells an open app that its friends list or requests changed, so it reloads them over REST. */
+  private notifyFriendsChanged(userId: string) {
+    const conn = this.byUser.get(userId);
+    if (conn && !conn.closed) this.send(conn, { t: 'friends', d: {} });
   }
 
   private async applyGhost(conn: Conn, on: boolean) {
